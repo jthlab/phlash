@@ -92,7 +92,7 @@ def _chunk_het_matrix(
         logger.warn("Chromosome length=%d is less than chunk size+overlap=%d", L, S)
         return np.empty([0, S], dtype=np.int8)
     if pad:
-        data = np.pad(data, [[0, 0], [0, (L - S) % chunk_size]], constant_values=-1)
+        data = np.pad(data, [[0, 0], [0, S - (L % S)]], constant_values=-1)
     L = data.shape[1]
     num_chunks = (L - S) // chunk_size
     # note that if we don't pad, we are throwing away data here.
