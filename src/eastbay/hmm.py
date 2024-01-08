@@ -4,6 +4,7 @@ from functools import singledispatch
 import jax
 import jax.numpy as jnp
 from jax import lax
+from jaxtyping import Array, Int8
 
 from eastbay.params import PSMCParams
 from eastbay.size_history import DemographicModel
@@ -33,7 +34,8 @@ def matvec_smc(v, pp: PSMCParams):
 
 
 @singledispatch
-def psmc_ll(pp: PSMCParams, data: jax.Array) -> float:
+def psmc_ll(pp: PSMCParams, data: Array[Int8, "L"]) -> float:
+    # for missing data, set emis[-1] = 1.
     emis = jnp.array([pp.emis0, pp.emis1, jnp.ones_like(pp.emis0)])
 
     @jax.remat

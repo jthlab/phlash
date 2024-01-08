@@ -11,8 +11,8 @@ from jax import vmap
 from jax.flatten_util import ravel_pytree
 from jaxtyping import Array, Float64, Int8, Int64
 
+import eastbay.hmm
 import eastbay.liveplot
-import eastbay.model
 from eastbay.gpu import PSMCKernel
 from eastbay.log import getLogger
 from eastbay.params import MCMCParams, PSMCParams
@@ -61,7 +61,7 @@ def _log_density(
     """
     dm = mcp.to_dm()
     pp = PSMCParams.from_dm(dm)
-    pis = vmap(lambda pp, d: eastbay.model.psmc_ll(pp, d)[0], (None, 0))(
+    pis = vmap(lambda pp, d: eastbay.hmm.psmc_ll(pp, d)[0], (None, 0))(
         pp, warmup
     )  # (I, M)
     pps = vmap(lambda pi: pp._replace(pi=pi))(pis)
