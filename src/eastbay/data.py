@@ -222,6 +222,7 @@ def stdpopsim_dataset(
     model_id: str,
     population: str | tuple[str, str] = None,
     n_samples: int = 1,
+    included_contigs: list[str] = None,
     excluded_contigs: list[str] = ["X", "Mt"],
     options: dict = {},
 ) -> tuple[eastbay.size_history.DemographicModel, list[tskit.TreeSequence]]:
@@ -257,6 +258,16 @@ def stdpopsim_dataset(
         {pop.name: 0 for pop in model.populations if pop.name not in pop_dict}
     )
     mu = species.genome.chromosomes[0].mutation_rate
+    if included_contigs is not None:
+
+        def filt(c):
+            return c.id in included_contigs
+
+    else:
+
+        def filt(c):
+            return c.id not in excluded_contigs
+
     chroms = [
         species.get_contig(
             chrom.id,
@@ -264,7 +275,7 @@ def stdpopsim_dataset(
             length_multiplier=options.get("length_multiplier", 1.0),
         )
         for chrom in species.genome.chromosomes
-        if chrom.ploidy == 2 and chrom.id not in excluded_contigs
+        if chrom.ploidy == 2 and filt(chrom)
     ]
     engine = stdpopsim.get_engine("msprime")
     ds = []
