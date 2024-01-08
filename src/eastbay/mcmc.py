@@ -12,6 +12,7 @@ from jax.flatten_util import ravel_pytree
 
 import eastbay.hmm
 import eastbay.liveplot
+from eastbay.data import Dataset
 from eastbay.gpu import PSMCKernel
 from eastbay.log import getLogger
 from eastbay.model import log_density
@@ -87,11 +88,19 @@ def _init_data(
 
 
 def fit(
-    data: list["eastbay.dataset.Dataset"],
-    test_data: "eastbay.dataset.Dataset" = None,
+    data: list[Dataset],
+    test_data: Dataset = None,
     options: dict = {},
 ) -> list["eastbay.size_history.DemographicModel"]:
-    """Add docstring."""
+    """Fit a demographic model to the data.
+
+    Args:
+        data: A list of datasets.
+        test_data: A dataset to use for computing the expected log-predictive density.
+        options: A dictionary of options for the fitting procedure.
+
+
+    """
     # some defaults pulled from the options dict
     key = options.get("key", jax.random.PRNGKey(1))
     niter = options.get("niter", 1000)

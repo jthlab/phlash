@@ -15,7 +15,21 @@ logger = getLogger(__name__)
 
 
 @dataclass
-class TreeSequenceDataset:
+class Dataset:
+    def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
+        raise NotImplementedError
+
+
+@dataclass
+class TreeSequenceDataset(Dataset):
+    """Read data from a tree sequence.
+
+    Args:
+        ts: tree sequence
+        nodes: list of (node1, node2) pairs to include. Each pair corresponds to a
+            diploid genome.
+    """
+
     ts: tskit.TreeSequence
     nodes: list[tuple[int, int]]
 
@@ -66,7 +80,16 @@ def _read_ts(
 
 
 @dataclass
-class VcfDataset:
+class VcfDataset(Dataset):
+    """Read data from a VCF file.
+
+    Args:
+        vcf_file: path to VCF file
+        contig: contig name
+        interval: genomic interval (start, end)
+        samples: list of sample ids to include
+    """
+
     vcf_file: str
     contig: str
     interval: tuple[int, int]
