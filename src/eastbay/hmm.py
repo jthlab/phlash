@@ -34,7 +34,7 @@ def matvec_smc(v, pp: PSMCParams):
 
 
 @singledispatch
-def psmc_ll(pp: PSMCParams, data: Array[Int8, "L"]) -> float:
+def psmc_ll(pp: PSMCParams, data: Int8[Array, "L"]) -> float:
     # for missing data, set emis[-1] = 1.
     emis = jnp.array([pp.emis0, pp.emis1, jnp.ones_like(pp.emis0)])
 
