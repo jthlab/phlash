@@ -14,14 +14,61 @@ from eastbay.memory import memory
 logger = getLogger(__name__)
 
 
+def _chunk_het_matrix(
+    het_matrix: np.ndarray,
+    overlap: int,
+    chunk_size: int,
+) -> np.ndarray:
+    data = het_matrix.clip(-1, 1).astype(np.int8)
+    assert data.ndim == 2
+    data = np.ascontiguousarray(data)
+    assert data.data.c_contiguous
+    N, L = data.shape
+    S = chunk_size + overlap
+    L_pad = int(np.ceil(L / S) * S)
+    padded_data = np.pad(data, [[0, 0], [0, L_pad - L]], constant_values=-1)
+    assert L_pad % S == 0
+    num_chunks = L_pad // S
+    new_shape = (N, num_chunks, S)
+    new_strides = (
+        padded_data.strides[0],
+        padded_data.strides[1] * chunk_size,
+        padded_data.strides[1],
+    )
+    chunked = np.lib.stride_tricks.as_strided(
+        padded_data, shape=new_shape, strides=new_strides
+    )
+    return np.copy(chunked.reshape(-1, S))
+
+
 @dataclass
-class Dataset:
+class Contig:
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
+        """Return a dict with keys 'het_matrix' and 'afs'."""
         raise NotImplementedError
 
+    def chunk(
+        self, window_size: int, overlap: int, chunk_size: int
+    ) -> dict[str, np.ndarray]:
+        """Chunk the data into overlapping windows of size chunk_size. The overlap
+        between windows is overlap.
+
+        Args:
+            window_size: number of base pairs in each window
+            overlap: number of base pairs to overlap between windows
+            chunk_size: number of base pairs in each chunk
+
+        Returns:
+            dict with keys 'chunks' and 'afs'. The value of 'chunks' is a 3d array
+            with shape (N, num_chunks, chunk_size).
+        """
+        d = self.get_data(window_size)
+        ch = _chunk_het_matrix(d["het_matrix"], overlap, chunk_size)
+        return {"chunks": ch, "afs": d["afs"]}
+
 
 @dataclass
-class TreeSequenceDataset(Dataset):
+class TreeSequenceContig(Contig):
     """Read data from a tree sequence.
 
     Args:
@@ -80,7 +127,7 @@ def _read_ts(
 
 
 @dataclass
-class VcfDataset(Dataset):
+class VcfDataset(Contig):
     """Read data from a VCF file.
 
     Args:
@@ -228,7 +275,7 @@ def stdpopsim_dataset(
         for f in as_completed(futs):
             ts = f.result()
             ds.append(
-                TreeSequenceDataset(
+                TreeSequenceContig(
                     ts,
                     # this covers the case where the nodes come one or two populations:
                     [(i, n_samples + i) for i in range(n_samples)],

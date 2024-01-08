@@ -12,7 +12,7 @@ from jax.flatten_util import ravel_pytree
 
 import eastbay.hmm
 import eastbay.liveplot
-from eastbay.data import Dataset
+from eastbay.data import Contig
 from eastbay.gpu import PSMCKernel
 from eastbay.log import getLogger
 from eastbay.model import log_density
@@ -22,34 +22,8 @@ from eastbay.util import tree_unstack
 logger = getLogger(__name__)
 
 
-def _chunk_het_matrix(
-    het_matrix: np.ndarray, overlap: int, chunk_size: int, pad: bool = True
-) -> np.ndarray:
-    data = het_matrix.clip(-1, 1)
-    assert data.ndim == 2
-    data = np.ascontiguousarray(data)
-    assert data.data.c_contiguous
-    N, L = data.shape
-    S = chunk_size + overlap
-    if L < S:
-        logger.warn("Chromosome length=%d is less than chunk size+overlap=%d", L, S)
-        return np.empty([0, S], dtype=np.int8)
-    if pad:
-        data = np.pad(data, [[0, 0], [0, S - (L % S)]], constant_values=-1)
-    L = data.shape[1]
-    num_chunks = (L - S) // chunk_size
-    # note that if we don't pad, we are throwing away data here.
-    data = data[:, : L - S + num_chunks * chunk_size]
-    new_shape = (N, 1 + num_chunks, S)
-    new_strides = (data.strides[0], data.strides[1] * chunk_size, data.strides[1])
-    chunked = np.lib.stride_tricks.as_strided(
-        data, shape=new_shape, strides=new_strides
-    )
-    return np.copy(chunked.reshape(-1, S))
-
-
 def _init_data(
-    data: list["eastbay.dataset.Dataset"],
+    data: list[Contig],
     window_size: int,
     overlap: int,
     chunk_size: int = None,
@@ -61,7 +35,7 @@ def _init_data(
     afss = []
     chunk_size = int(min(0.2 * ds.L / window_size for ds in data))
     if chunk_size < 10 * overlap:
-        logger.warn(
+        logger.warning(
             "The chunk size is %dbp, which is less than 10 times the overlap (%dbp).",
             chunk_size,
             overlap,
@@ -72,24 +46,23 @@ def _init_data(
         for ds in data:
             if ds.N != N:
                 raise ValueError("All datasets must have the same number of samples")
-            futs.append(pool.submit(ds.get_data, window_size))
+            futs.append(pool.submit(ds.chunk, window_size, overlap, chunk_size))
         for f in as_completed(futs):
             d = f.result()
             afss.append(d["afs"])
-            ch = _chunk_het_matrix(d["het_matrix"][:max_samples], overlap, chunk_size)
-            chunks.append(ch)
+            chunks.append(d["chunks"])
 
     assert all(a.ndim == 1 for a in afss)
     assert len({a.shape for a in afss}) == 1
     # all afs have same dimension
     assert len({ch.shape[-1] for ch in chunks}) == 1
-    assert all(ch.ndim == 2 for ch in chunks)
+    assert all(ch.ndim == 3 for ch in chunks)
     return np.sum(afss, 0), np.concatenate(chunks, 0)
 
 
 def fit(
-    data: list[Dataset],
-    test_data: Dataset = None,
+    data: list[Contig],
+    test_data: Contig = None,
     options: dict = {},
 ) -> list["eastbay.size_history.DemographicModel"]:
     """Fit a demographic model to the data.
