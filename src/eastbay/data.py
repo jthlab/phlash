@@ -127,7 +127,7 @@ def _read_ts(
 
 
 @dataclass
-class VcfDataset(Contig):
+class VcfContig(Contig):
     """Read data from a VCF file.
 
     Args:
@@ -240,7 +240,6 @@ def stdpopsim_dataset(
         consisting of all non-excluded diploid chromosomes for the corresponding
         species.
     """
-    assert n_samples % 2 == 0
     try:
         species, model = _find_stdpopsim_model(species_id, model_id)
     except ValueError:
@@ -249,6 +248,7 @@ def stdpopsim_dataset(
         assert len(model.populations) == 1
         population = model.populations[0].name
     if isinstance(population, tuple):
+        assert n_samples % 2 == 0
         assert len(population) == 2
         pop_dict = {p: n_samples // 2 for p in population}
     else:

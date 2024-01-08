@@ -1,50 +1,37 @@
 import os
 
+import msprime
 import numpy as np
 
-from eastbay.data import VcfDataset
-
-# from eastbay.data import ChunkedData, _chunk, stdpopsim_dataset
+from eastbay.data import TreeSequenceContig, VcfContig, _chunk_het_matrix
 
 
-def test_chunk_nopad():
-    data = np.arange(36).reshape(3, 12)
-    chunked = _chunk(data, 5, 2, False)
-    np.testing.assert_allclose(chunked, [[d[:7], d[5:]] for d in data])
+def test_chunk(rng):
+    H = rng.integers(0, 2, size=(1, 10_000))
+    overlap = 123
+    chunk_size = 4_567
+    ch = _chunk_het_matrix(H, overlap=overlap, chunk_size=chunk_size)
+    assert ch.shape == (3, overlap + chunk_size)
+    b = 0
+    for ch_i in ch:
+        q = min(chunk_size + overlap, len(H[0, b:]))
+        assert np.all(ch_i[:q] == H[0, b : b + q])
+        b += chunk_size
 
 
-def test_chunk_nopad_uneven():
-    data = np.arange(27).reshape(9, 3)
-    chunked = _chunk(data, 2, 1, False)
-    assert chunked.shape == (9, 1, 3)
-    np.testing.assert_allclose(chunked[:, 0], data)
-
-
-def test_chunk_pad():
-    data = np.arange(16).reshape(4, 4)
-    chunked = _chunk(data, 2, 1, True)
-    np.testing.assert_allclose(chunked, [[d[:3], np.append(d[2:], -1)] for d in data])
-
-
-def test_theta(rng):
-    data = (rng.uniform(size=(11, 7)) > 0.2).astype(int)
-    overlap = 2
-    chunks = _chunk(data, 4, overlap, True)
-    ch = ChunkedData(chunks, overlap=overlap, afs=None)
-    theta1 = ch.theta
-    d = chunks[:, overlap:]
-    theta2 = (d == 1).sum() / (d != -1).sum()
-    np.testing.assert_allclose(theta1, theta2)
-
-
-def test_stdpopsim():
-    truth, ts = stdpopsim_dataset("SouthMiddleAtlas_1D17", "SouthMiddleAtlas")
-
-
-def test_vcfdataset():
+def test_vcf():
     fn = os.path.join(os.path.dirname(__file__), "fixtures", "sample.bcf")
-    vcf = VcfDataset(fn, "1", (25_000_000, 26_000_000), ["NA12878", "NA12889"])
-    d = vcf.get_data()
+    vcf = VcfContig(fn, "1", (25_000_000, 26_000_000), ["NA12878", "NA12889"])
+    d = vcf.get_data(100)
     assert d["het_matrix"].max() == 2
     assert d["het_matrix"].sum() == 256
     assert np.all(d["afs"] == [143, 60, 89])
+
+
+def test_ts():
+    sim = msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
+    tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)])
+    d = tsc.get_data(100)
+    assert d["het_matrix"].max() == 3
+    assert d["het_matrix"].sum() == 570
+    assert np.all(d["afs"] == [507, 172, 63])
