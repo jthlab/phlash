@@ -1,15 +1,15 @@
+import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import cyvcf2
 import numpy as np
-import stdpopsim
 import tqdm.auto as tqdm
 import tskit
 
-import eastbay.size_history
 from eastbay.log import getLogger
 from eastbay.memory import memory
+from eastbay.size_history import DemographicModel, SizeHistory
 
 logger = getLogger(__name__)
 
@@ -79,6 +79,21 @@ class TreeSequenceContig(Contig):
 
     ts: tskit.TreeSequence
     nodes: list[tuple[int, int]]
+
+    def __post_init__(self):
+        try:
+            assert isinstance(self.nodes, list)
+            for x in list:
+                assert isinstance(x, tuple)
+                assert len(x) == 2
+                for y in x:
+                    assert isinstance(x, int)
+        except AssertionError:
+            raise ValueError(
+                "Nodes should be a list of tuples (node1, node2) "
+                "leaf node ids in the tree sequence denoting the pairs "
+                "of haplotypes that are to be analyzed."
+            )
 
     @property
     def N(self):
@@ -201,7 +216,9 @@ def _read_vcf(
 def _find_stdpopsim_model(
     species_id: str,
     model_id: str,
-) -> tuple[stdpopsim.Species, stdpopsim.DemographicModel]:
+) -> tuple["stdpopsim.Species", "stdpopsim.DemographicModel"]:
+    import stdpopsim
+
     species = stdpopsim.get_species(species_id)
     if isinstance(model_id, stdpopsim.DemographicModel):
         return (species, model_id)
@@ -225,7 +242,7 @@ def stdpopsim_dataset(
     included_contigs: list[str] = None,
     excluded_contigs: list[str] = ["X", "Mt"],
     options: dict = {},
-) -> tuple[eastbay.size_history.DemographicModel, list[tskit.TreeSequence]]:
+) -> tuple[DemographicModel, list[tskit.TreeSequence]]:
     r"""Convenience method for simulating data from the stdpopsim catalog.
 
     Args:
@@ -241,6 +258,10 @@ def stdpopsim_dataset(
         consisting of all non-excluded diploid chromosomes for the corresponding
         species.
     """
+    # keep this import local since most users won't require it. also it generates
+    # annoying warnings on load.
+    import stdpopsim
+
     try:
         species, model = _find_stdpopsim_model(species_id, model_id)
     except ValueError:
@@ -304,6 +325,79 @@ def stdpopsim_dataset(
     else:
         d = {p: 1 for p in population}
     c, _ = md.coalescence_rate_trajectory(t, d)
-    eta = eastbay.size_history.SizeHistory(t=t, c=c)
-    true_dm = eastbay.size_history.DemographicModel(eta=eta, theta=mu, rho=None)
+    eta = SizeHistory(t=t, c=c)
+    true_dm = DemographicModel(eta=eta, theta=mu, rho=None)
     return true_dm, ds
+
+
+def contig(
+    src: str, samples: list[str] | list[tuple[int, int]], region: str = None
+) -> Contig:
+    """
+    Constructs and returns a Contig object based on the source file and specified
+    parameters.
+
+    This function supports VCF files (`.vcf`, `.vcf.gz`, `.bcf`), tree sequence files
+    (`.trees`, `.ts`), and compressed tree sequence files (`.tsz`, `.tszip`). It
+    requires different handling and parameters based on the file type.
+
+    For VCF files, a bcftools region string must be passed in the `region` parameter.
+    The function will parse this string to construct a VcfContig object.
+
+    For tree sequence files and their compressed versions, the `region` parameter is
+    not supported, and the function constructs a TreeSequenceContig object.
+
+    Parameters:
+    - src: Path to the source file.
+    - samples: A list of samples or a list of sample intervals.
+    - region: A string specifying the genomic region, required for VCF files.
+      Format should be "contig:start-end" (e.g., "chr1:1000-5000").
+
+    Returns:
+    - Contig: A Contig object which can be either VcfContig or TreeSequenceContig based
+      on the input file type.
+
+    Raises:
+    - ValueError: If the region is not provided or incorrectly formatted for VCF files,
+      or if region is provided for tree sequence files. Also raised if loading the file
+      fails for any supported format.
+
+    Examples:
+    - contig("example.vcf.gz", samples=["sample1", "sample2"], region="chr1:1000-5000")
+    - contig("example.trees", samples=[(1, 100), (101, 200)])
+
+    Note:
+    - See the documentation of VcfContig and TreeSequenceContig for more details on
+    these classes.
+    """
+    if any(src.endswith(x) for x in [".vcf", ".vcf.gz", ".bcf"]):
+        if region is None or not re.match(r"\w+:\d+-\d+", region):
+            raise ValueError(
+                "VCF files require passing in a bcftools region string. "
+                "See docstring for examples."
+            )
+        c, intv = region.split(":")
+        a, b = map(int, intv.split("-"))
+        try:
+            return VcfContig(src, samples=samples, contig=c, interval=(a, b))
+        except Exception as e:
+            raise ValueError(f"Trying to load {src} as a VCF failed") from e
+
+    if region is not None:
+        raise ValueError(
+            "Region string is not supported for tree sequence files. "
+            "Use TreeSequence.keep_intervals() instead."
+        )
+    if src.endswith(".trees") or src.endswith(".ts"):
+        try:
+            ts = tskit.load(src)
+        except Exception as e:
+            raise ValueError(f"Trying to load {src} as a tree sequence failed") from e
+    elif src.endswith(".tsz") or src.endswith(".tszip"):
+        try:
+            ts = tszip.decompress(src)
+        except Exception as e:
+            raise ValueError(
+                f"Trying to load {src} as a compressed tree sequence failed"
+            ) from e
+    return TreeSequenceContig(ts, samples=samples)
