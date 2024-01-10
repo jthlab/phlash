@@ -198,6 +198,7 @@ def _read_vcf(
     end: int,
     samples: list[str],
     window_size: int,
+    progress: bool = True,
 ) -> dict[str, np.ndarray]:
     vcf = cyvcf2.VCF(vcf_file, samples=samples, gts012=True)
     region = f"{contig}:{start}-{end}"
@@ -205,11 +206,14 @@ def _read_vcf(
     N = len(samples)
     afs = np.zeros(2 * N + 1, dtype=np.int64)
     H = np.zeros([N, int(L / window_size + 1)], dtype=np.int8)
-    for variant in vcf(region):
-        i = int((variant.POS - start) / window_size)
-        ty = variant.gt_types
-        H[:, i] += ty == 1
-        afs[ty[ty < 3].sum()] += 1
+    with tqdm.tqdm(total=L, disable=not progress, desc="Reading VCF") as pbar:
+        for variant in vcf(region):
+            x = variant.POS - start
+            pbar.update(x - pbar.n)
+            i = int(x / window_size)
+            ty = variant.gt_types
+            H[:, i] += ty == 1
+            afs[ty[ty < 3].sum()] += 1
     return dict(het_matrix=H, afs=afs[1:-1])
 
 

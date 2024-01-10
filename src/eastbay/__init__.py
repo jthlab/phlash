@@ -1,3 +1,5 @@
+"Bayesian inference of ancestral size history."
+
 import os
 
 # this needs to occur before jax loads
@@ -7,6 +9,7 @@ import sys
 
 import jax
 
+from eastbay.data import contig
 from eastbay.log import getLogger
 from eastbay.mcmc import fit
 
@@ -14,7 +17,7 @@ jax.config.update("jax_enable_x64", True)
 
 getLogger(__name__).setLevel(logging.INFO)
 
-__all__ = ["fit"]
+__all__ = ["fit", "contig"]
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`
