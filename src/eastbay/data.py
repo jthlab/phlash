@@ -83,11 +83,11 @@ class TreeSequenceContig(Contig):
     def __post_init__(self):
         try:
             assert isinstance(self.nodes, list)
-            for x in list:
+            for x in self.nodes:
                 assert isinstance(x, tuple)
                 assert len(x) == 2
                 for y in x:
-                    assert isinstance(x, int)
+                    assert isinstance(y, int)
         except AssertionError:
             raise ValueError(
                 "Nodes should be a list of tuples (node1, node2) "
