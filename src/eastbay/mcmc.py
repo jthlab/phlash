@@ -17,6 +17,7 @@ from eastbay.gpu import PSMCKernel
 from eastbay.log import getLogger
 from eastbay.model import log_density
 from eastbay.params import MCMCParams
+from eastbay.size_history import DemographicModel
 from eastbay.util import tree_unstack
 
 logger = getLogger(__name__)
@@ -56,7 +57,7 @@ def _init_data(
     assert len({a.shape for a in afss}) == 1
     # all afs have same dimension
     assert len({ch.shape[-1] for ch in chunks}) == 1
-    assert all(ch.ndim == 3 for ch in chunks)
+    assert all(ch.ndim == 2 for ch in chunks)
     return np.sum(afss, 0), np.concatenate(chunks, 0)
 
 
@@ -64,21 +65,56 @@ def fit(
     data: list[Contig],
     test_data: Contig = None,
     options: dict = {},
-) -> list["eastbay.size_history.DemographicModel"]:
-    """Fit a demographic model to the data.
+) -> list[DemographicModel]:
+    """
+    Sample demographic models from posterior given data.
+
+    This samples demographic models using various input data and customizable
+    options. It handles different formats of data, including tree sequence files and
+    VCF files. The function allows for complex configurations via the options
+    dictionary.
 
     Args:
-        data: A list of datasets.
-        test_data: A dataset to use for computing the expected log-predictive density.
-        options: A dictionary of options for the fitting procedure.
+        data: A list of Contig objects representing the datasets.
+        test_data: A Contig object for computing the expected log-predictive density.
+            Used for testing and assessing convergence. It is recommended that you
+            specify this option.
+        options (dict, optional): A dictionary containing options for the fitting
+                                  procedure. Includes parameters like number of
+                                  iterations, window size, overlap, chunk size,
+                                  random seed, and others.
 
+    Returns:
+        list[DemographicModel]: A list of posterior samples.
 
+    Raises:
+        ValueError: If there are issues with the input data or options.
+
+    Examples:
+        fit([contig1, contig2], test_data=contig3,
+            options={"niter": 1000, "window_size": 100})
+
+    Notes:
+        - Check the 'DemographicModel' documentation for more details on the output
+          models.
+        - The options dictionary can be used to control the behavior of the fitting
+          procedure in various ways. See the source code of this function for more
+          information.
     """
     # some defaults pulled from the options dict
     key = options.get("key", jax.random.PRNGKey(1))
+    # the number of svgd iterations. if a test dataset is provided, the optimizer
+    # might perform fewer if convergence criteria are met.
     niter = options.get("niter", 1000)
+    # the bin size in base pairs. observations are grouped into bins of this width.
+    # recombination occurs between bins but not within bins. default 100 is same as
+    # psmc.
     window_size = options.get("window_size", 100)
+    # the amount overlap between adjacent windows, used to break long sequential hmm
+    # observations into parallelizable batches. this should generally be left at the
+    # default 500. see manuscript for more information on this parameter.
     overlap = options.get("overlap", 500)
+    # the size of each "chunk", see manuscript. this is estimated from data.
     chunk_size = options.get("chunk_size")
     max_samples = options.get("max_samples", 20)
     afs, chunks = _init_data(data, window_size, overlap, chunk_size, max_samples)
@@ -88,7 +124,7 @@ def fit(
     # a big improvement. For now it's capped at 5.
     S = options.get("minibatch_size")
     if not S:
-        S = min(5, int(len(chunks) / niter))
+        S = max(1, min(10, int(len(chunks) / niter)))
 
     # avoid storing a huge array on gpu if we're only going to use a small part of it
     if len(chunks) > 10 * S * niter:
