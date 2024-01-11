@@ -335,7 +335,9 @@ def stdpopsim_dataset(
 
 
 def contig(
-    src: str, samples: list[str] | list[tuple[int, int]], region: str = None
+    src: str | tskit.TreeSequence,
+    samples: list[str] | list[tuple[int, int]],
+    region: str = None,
 ) -> Contig:
     """
     Constructs and returns a Contig object based on the source file and specified
@@ -352,7 +354,7 @@ def contig(
     not supported, and the function constructs a TreeSequenceContig object.
 
     Parameters:
-    - src: Path to the source file.
+    - src: Path to the source file, or a tskit.TreeSequence.
     - samples: A list of samples or a list of sample intervals.
     - region: A string specifying the genomic region, required for VCF files.
       Format should be "contig:start-end" (e.g., "chr1:1000-5000").
@@ -374,7 +376,9 @@ def contig(
     - See the documentation of VcfContig and TreeSequenceContig for more details on
     these classes.
     """
-    if any(src.endswith(x) for x in [".vcf", ".vcf.gz", ".bcf"]):
+    if isinstance(src, str) and any(
+        src.endswith(x) for x in [".vcf", ".vcf.gz", ".bcf"]
+    ):
         if region is None or not re.match(r"\w+:\d+-\d+", region):
             raise ValueError(
                 "VCF files require passing in a bcftools region string. "
@@ -392,7 +396,9 @@ def contig(
             "Region string is not supported for tree sequence files. "
             "Use TreeSequence.keep_intervals() instead."
         )
-    if src.endswith(".trees") or src.endswith(".ts"):
+    if isinstance(src, tskit.TreeSequence):
+        ts = src
+    elif src.endswith(".trees") or src.endswith(".ts"):
         try:
             ts = tskit.load(src)
         except Exception as e:
@@ -404,4 +410,4 @@ def contig(
             raise ValueError(
                 f"Trying to load {src} as a compressed tree sequence failed"
             ) from e
-    return TreeSequenceContig(ts, samples=samples)
+    return TreeSequenceContig(ts, nodes=samples)
