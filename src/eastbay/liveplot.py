@@ -1,5 +1,3 @@
-import itertools as it
-
 import numpy as np
 from jax import jit
 from jax import numpy as jnp
@@ -27,15 +25,14 @@ def style_axis(ax: "matplotlib.axes.Axes"):
     ax.spines[["right", "top"]].set_visible(False)
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlabel("Generations")
+    ax.set_xlabel("Time (generations)")
     ax.set_ylabel("$N_e$")
 
 
 class _IPythonLivePlot:
     def __init__(
         self,
-        mcp0: "eastbay.mcmc.MCMCParams",
-        truth: "eastbay.size_history.DemographicModel" = None,
+        truth: DemographicModel = None,
     ):
         import matplotlib.pyplot as plt
         from IPython.display import display, set_matplotlib_formats
@@ -44,64 +41,54 @@ class _IPythonLivePlot:
         self._fig, self._ax = plt.subplots()
         ax = self._ax
         style_axis(ax)
-        theta = 1.0
+        self._x = None
         if truth is not None:
-            theta = truth.theta
-            t1, tM = truth.eta.t[[1, -1]]
             ax.plot(
                 np.append(truth.eta.t, 5 * truth.eta.t[-1]),
                 np.append(truth.eta.Ne, truth.eta.Ne[-1]),
                 color="black",
             )
             ax.set_ylim(0.2 * truth.eta.Ne.min(), 5 * truth.eta.Ne.max())
-        else:
-            t1, tM = mcp0.to_dm().eta.t[[1, -1]]
-        x = np.geomspace(0.2 * t1, 5 * tM, 1000)
+            self._x = np.geomspace(truth.eta.t[1], 5 * truth.eta.t[-1], 1000)
         (self._line,) = ax.plot([], [], color="tab:blue")
         self._poly = [ax.fill_between([], 0, 0, color="tab:blue")]
         self._display = display(self._fig, display_id=True)
 
-        def qtiles(mcp):
-            def f(mcp):
-                dm = mcp.to_dm().rescale(100 * theta)
-                return dm.eta(x)
+        def qtiles(dms):
+            def f(dm):
+                return dm.eta(self._x)
 
-            ys = vmap(f)(mcp)
+            ys = vmap(f)(dms)
             Ne = 1 / 2 / ys
-            return x, jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
+            return jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
 
         self._qtiles = jit(qtiles)
 
-    def __call__(self, state, **kw):
-        self._plot(state.particles)
-
-    def _plot(self, mcp: "eastbay.mcmc.MCMCParams"):
-        x, (q025, m, q975) = self._qtiles(mcp)
-        self._line.set_data(x, m)
+    def __call__(self, dms: DemographicModel):
+        if self._x is None:
+            self._x = np.geomspace(dms.eta.t[:, 1].min(), dms.eta.t[:, -1].max(), 1000)
+        q025, m, q975 = self._qtiles(dms)
+        self._line.set_data(self._x, m)
         self._poly[0].remove()
         self._poly[0] = self._ax.fill_between(
-            x, q025, q975, color="tab:blue", alpha=0.1
+            self._x, q025, q975, color="tab:blue", alpha=0.1
         )
         self._display.update(self._fig)
 
 
 def liveplot_cb(
-    mcp0, truth: "eastbay.size_history.DemographicModel" = None, plot_every: int = 1
+    truth: "eastbay.size_history.DemographicModel" = None,
+    plot_every: int = 1,
 ):
-    def f(state, **kw):
+    def f(dms):
         return None
 
     try:
         if _is_running_in_jupyter():
-            counter = it.count()
-            cb = _IPythonLivePlot(mcp0, truth)
-
-            def f(state, **kw):  # noqa: F811
-                if next(counter) % plot_every == 0:
-                    cb(state, **kw)
-
+            f = _IPythonLivePlot(truth)  # noqa: F811
     except Exception as e:
         logger.debug("Live plot init failed: %s", str(e))
+
     return f
 
 

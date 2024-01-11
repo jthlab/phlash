@@ -1,3 +1,4 @@
+import itertools as it
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import blackjax
@@ -218,12 +219,35 @@ def fit(
         c=jnp.array([1.0, N / S, 1.0]),
         afs=afs,
     )
+
+    # if specified, use the mutation rate for plotting
+    mutation_rate = options.get("mutation_rate")
+    if mutation_rate is None and "truth" in options:
+        mutation_rate = options["truth"].theta
+
+    # build the plot callback
     if not options.get("callback"):
-        cb = eastbay.liveplot.liveplot_cb(
-            state, truth=options.get("truth"), plot_every=options.get("plot_every")
-        )
+        plotter = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
+        if not mutation_rate:
+            plotter._ax.set_xlabel(f"Time ($\\theta={init.theta:.4g}$)")
+        counter = it.count(1)
+
+        def cb(dms):
+            if next(counter) % options.get("plot_every", 1) == 0:
+                plotter(dms)
+
     else:
         cb = options["callback"]
+
+    def dms():
+        ret = vmap(MCMCParams.to_dm)(state.particles)
+        # the learned rates are per window, so we have to scale up the mutation and
+        # recombination to get the per-base-pair rates.
+        ret = ret._replace(theta=ret.theta / window_size, rho=ret.rho / window_size)
+        if mutation_rate:
+            ret = vmap(DemographicModel.rescale, (0, None))(ret, mutation_rate)
+        return ret
+
     try:
         ema = best_elpd = None
         with tqdm.trange(
@@ -253,13 +277,9 @@ def fit(
                         f"elpd={ema:.0f} best={best_elpd[1]:.0f} "
                         f"age={i - best_elpd[0]:d}"
                     )
-                cb(state)
+                cb(dms())
     except KeyboardInterrupt:
         pass  # if we break out, just return the most recent state
 
-    dms = vmap(MCMCParams.to_dm)(state.particles)
-    # the learned rates are per window, so we have to scale up the
-    # mutation and recombination to get the per-base-pair rates.
-    dms = dms._replace(theta=dms.theta / window_size, rho=dms.rho / window_size)
     # convert to list of dms, easier for the end user who doesn't know jax
-    return tree_unstack(dms)
+    return tree_unstack(dms())
