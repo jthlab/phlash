@@ -87,7 +87,7 @@ class TreeSequenceContig(Contig):
                 assert isinstance(x, tuple)
                 assert len(x) == 2
                 for y in x:
-                    assert isinstance(y, int)
+                    assert isinstance(y, (int, np.integer))
         except AssertionError:
             raise ValueError(
                 "Nodes should be a list of tuples (node1, node2) "
