@@ -48,11 +48,18 @@ def _init_data(
         for ds in data:
             if ds.N != N:
                 raise ValueError("All datasets must have the same number of samples")
-            futs.append(pool.submit(ds.chunk, window_size, overlap, chunk_size))
+            futs.append(
+                pool.submit(
+                    ds.to_chunked,
+                    overlap=overlap,
+                    chunk_size=chunk_size,
+                    window_size=window_size,
+                )
+            )
         for f in as_completed(futs):
             d = f.result()
-            afss.append(d["afs"])
-            chunks.append(d["chunks"])
+            afss.append(d.afs)
+            chunks.append(d.chunks)
 
     assert all(a.ndim == 1 for a in afss)
     assert len({a.shape for a in afss}) == 1
@@ -65,35 +72,27 @@ def _init_data(
 def fit(
     data: list[Contig],
     test_data: Contig = None,
-    options: dict = {},
+    **options,
 ) -> list[DemographicModel]:
     """
-    Sample demographic models from posterior given data.
-
-    This samples demographic models using various input data and customizable
-    options. It handles different formats of data, including tree sequence files and
-    VCF files. The function allows for complex configurations via the options
-    dictionary.
+    Sample demographic models from posterior.
 
     Args:
         data: A list of Contig objects representing the datasets.
         test_data: A Contig object for computing the expected log-predictive density.
-            Used for testing and assessing convergence. It is recommended that you
-            specify this option.
-        options (dict, optional): A dictionary containing options for the fitting
-                                  procedure. Includes parameters like number of
-                                  iterations, window size, overlap, chunk size,
-                                  random seed, and others.
+            Used for assessing convergence and preventing overfitting. Usage is
+            recommended.
+        **options: options for the fitting procedure. Includes parameters like number
+            of iterations, window size, overlap, chunk size, and random seed.
 
     Returns:
-        list[DemographicModel]: A list of posterior samples.
+        A list of posterior samples.
 
     Raises:
         ValueError: If there are issues with the input data or options.
 
     Examples:
-        fit([contig1, contig2], test_data=contig3,
-            options={"niter": 1000, "window_size": 100})
+        fit([contig1, contig2], test_data=contig3)
 
     Notes:
         - Check the 'DemographicModel' documentation for more details on the output
@@ -119,6 +118,8 @@ def fit(
     chunk_size = options.get("chunk_size")
     max_samples = options.get("max_samples", 20)
     afs, chunks = _init_data(data, window_size, overlap, chunk_size, max_samples)
+    # the mutation rate per generation, if known.
+    mutation_rate = options.get("mutation_rate")
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -143,11 +144,24 @@ def fit(
         ch0 = chunks[:, overlap:]
         theta = ch0[ch0 > -1].mean()
         logger.info("Scaled mutation rate Θ=%f", theta)
+        if mutation_rate:
+            # if mutation rate is known then pick t1, tM such that in rescaled time,
+            # t1=1, tM=1e6 generations. (seems like a good default?)
+            N0 = theta / window_size / 4 / mutation_rate
+            t1, tM = (10**x / 2 / N0 for x in [0, 6])
+        else:
+            t1 = 1e-4
+            tM = 15.0
+        # or, the user can override
+        t1 = options.get("t1", t1)
+        tM = options.get("tM", tM)
         init = MCMCParams.from_linear(
+            # this pattern is similar to the psmc default, but we have fewer params
+            # (16) to use, so are a little more conservative with parameter tying
             pattern="14*1+1*2",
             rho=options.get("rho_over_theta", 1.0) * theta,
-            t1=1e-4,
-            tM=15.0,
+            t1=t1,
+            tM=tM,
             c=jnp.ones(15),
             theta=theta,
             alpha=options.get("alpha", 0.0),
@@ -189,7 +203,7 @@ def fit(
     # log-predictive density
     # used to gauge convergence.
     if test_data:
-        d = test_data.get_data()
+        d = test_data.get_data(window_size)
         test_afs = d["afs"]
         test_data = d["het_matrix"][:max_samples]
         N_test = test_data.shape[0]
@@ -221,7 +235,6 @@ def fit(
     )
 
     # if specified, use the mutation rate for plotting
-    mutation_rate = options.get("mutation_rate")
     if mutation_rate is None and "truth" in options:
         mutation_rate = options["truth"].theta
 
