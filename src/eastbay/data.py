@@ -82,8 +82,9 @@ class Contig(ABC):
         self, overlap: int, chunk_size: int, window_size: int = 100
     ) -> ChunkedContig:
         d = self.get_data(overlap)
-        h = _trim_het_matrix(d["het_matrix"])
-        ch = _chunk_het_matrix(het_matrix=h, overlap=overlap, chunk_size=chunk_size)
+        ch = _chunk_het_matrix(
+            het_matrix=d["het_matrix"], overlap=overlap, chunk_size=chunk_size
+        )
         return ChunkedContig(chunks=ch, afs=d["afs"])
 
 
