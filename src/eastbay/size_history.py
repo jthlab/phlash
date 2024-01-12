@@ -265,17 +265,13 @@ class DemographicModel(NamedTuple):
         return cls(eta=eta, theta=theta, rho=rho)
 
     def rescale(self, mu: float) -> "DemographicModel":
-        """Rescale so model so that the mutation rate is mu per unit time.
+        """Rescale model from coalescent time to generations.
 
         Args:
             mu: The mutation rate per locus per generation.
 
         Returns:
             Rescaled demographic model.
-
-        Note:
-             If the model was estimated based on binned data (with window size w, say),
-             then the effective mutation rate is w * mu.
         """
         N0 = self.theta / 4 / mu
         t = 2 * N0 * self.eta.t
