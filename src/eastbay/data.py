@@ -1,17 +1,36 @@
 import re
+from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
+from typing import NamedTuple
 
 import cyvcf2
 import numpy as np
 import tqdm.auto as tqdm
 import tskit
+from intervaltree import IntervalTree
+from jaxtyping import Array, Int, Int8
 
 from eastbay.log import getLogger
 from eastbay.memory import memory
 from eastbay.size_history import DemographicModel, SizeHistory
 
 logger = getLogger(__name__)
+
+
+class ChunkedContig(NamedTuple):
+    chunks: Int8[Array, "N L"]
+    afs: Int[Array, "n"]
+
+
+def _trim_het_matrix(het_matrix: np.ndarray):
+    "trim off leading and trailing missing alleles"
+    miss = np.all(het_matrix == -1, axis=0)
+    a = miss.argmin()
+    b = miss[:, a:].argmax()
+    ret = het_matrix[:, a : a + b]
+    logger.debug("trimmed het matrix from %s to %s", het_matrix.shape, ret.shape)
+    return ret
 
 
 def _chunk_het_matrix(
@@ -41,30 +60,31 @@ def _chunk_het_matrix(
     return np.copy(chunked.reshape(-1, S))
 
 
-@dataclass
-class Contig:
-    def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
-        """Return a dict with keys 'het_matrix' and 'afs'."""
-        raise NotImplementedError
+class Contig(ABC):
+    @abstractmethod
+    def get_data(self, window_size: int) -> dict[str, np.ndarray]:
+        "Compute the heterozygote matrix and AFS for this contig."
+        ...
 
-    def chunk(
-        self, window_size: int, overlap: int, chunk_size: int
-    ) -> dict[str, np.ndarray]:
-        """Chunk the data into overlapping windows of size chunk_size. The overlap
-        between windows is overlap.
+    @property
+    @abstractmethod
+    def N(self):
+        "Number of ploids in this dataset."
+        ...
 
-        Args:
-            window_size: number of base pairs in each window
-            overlap: number of base pairs to overlap between windows
-            chunk_size: number of base pairs in each chunk
+    @property
+    @abstractmethod
+    def L(self):
+        "Length of sequence"
+        ...
 
-        Returns:
-            dict with keys 'chunks' and 'afs'. The value of 'chunks' is a 3d array
-            with shape (N, num_chunks, chunk_size).
-        """
-        d = self.get_data(window_size)
-        ch = _chunk_het_matrix(d["het_matrix"], overlap, chunk_size)
-        return {"chunks": ch, "afs": d["afs"]}
+    def to_chunked(
+        self, overlap: int, chunk_size: int, window_size: int = 100
+    ) -> ChunkedContig:
+        d = self.get_data(overlap)
+        h = _trim_het_matrix(d["het_matrix"])
+        ch = _chunk_het_matrix(het_matrix=h, overlap=overlap, chunk_size=chunk_size)
+        return ChunkedContig(chunks=ch, afs=d["afs"])
 
 
 @dataclass
@@ -75,10 +95,13 @@ class TreeSequenceContig(Contig):
         ts: tree sequence
         nodes: list of (node1, node2) pairs to include. Each pair corresponds to a
             diploid genome.
+        mask: list of intervals (a, b). All positions within these intervals are
+            ignored.
     """
 
     ts: tskit.TreeSequence
     nodes: list[tuple[int, int]]
+    mask: list[tuple[int, int]] = None
 
     def __post_init__(self):
         try:
@@ -102,19 +125,39 @@ class TreeSequenceContig(Contig):
 
     @property
     def L(self):
-        return self.ts.get_sequence_length()
+        return int(self.ts.get_sequence_length())
 
-    def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
-        ret = {}
-        ret["het_matrix"] = _read_ts(self.ts, self.nodes, window_size)
-        ret["afs"] = self._afs()
-        return ret
-
-    def _afs(self):
+    def get_data(self, window_size: int):
+        # form interval tree for masking
+        mask = self.mask or []
+        tr = IntervalTree.from_tuples([(0, self.L)])
+        for a, b in mask:
+            tr.chop(a, b)
+        # compute breakpoints
+        bp = np.array([x for i in tr for x in [i.begin, i.end]])
+        assert len(set(bp)) == len(bp)
+        assert (bp == np.sort(bp)).all()
+        if bp[0] != 0.0:
+            bp = np.insert(bp, 0, 0.0)
+        if bp[-1] != self.L:
+            bp = np.append(bp, self.L)
+        mid = (bp[:-1] + bp[1:]) / 2.0
+        unmasked = [bool(tr[m]) for m in mid]
         nodes_flat = [x for t in self.nodes for x in t]
-        return self.ts.allele_frequency_spectrum(
-            sample_sets=[nodes_flat], polarised=True, span_normalise=False
-        )[1:-1]
+        afs = self.ts.allele_frequency_spectrum(
+            sample_sets=[nodes_flat], windows=bp, polarised=True, span_normalise=False
+        )[unmasked].sum(0)[1:-1]
+        het_matrix = _read_ts(self.ts, self.nodes, window_size)
+        # now mask out columns of the het matrix based on interval
+        # overlap
+        tr = IntervalTree.from_tuples(mask)
+        column_mask = [
+            bool(tr[a : a + window_size]) for a in range(0, self.L, window_size)
+        ]
+        assert len(column_mask) == het_matrix.shape[1]
+        # set mask out these columns
+        het_matrix[:, column_mask] = -1
+        return dict(afs=afs, het_matrix=het_matrix)
 
 
 @memory.cache
@@ -142,7 +185,7 @@ def _read_ts(
 
 
 @dataclass
-class VcfContig(Contig):
+class VcfContig:
     """Read data from a VCF file.
 
     Args:
@@ -156,6 +199,7 @@ class VcfContig(Contig):
     contig: str
     interval: tuple[int, int]
     samples: list[str]
+    mask: list[tuple[int, int]] = None
 
     @property
     def N(self):
@@ -168,6 +212,11 @@ class VcfContig(Contig):
         return self.interval[1] - self.interval[0]
 
     def __post_init__(self):
+        if self.mask is not None:
+            raise NotImplementedError(
+                "masking is not yet implemented for VCF files, please use vcftools or "
+                "a similar method."
+            )
         if not self.contig:
             raise ValueError(
                 "contig must be specified. reading in the entire vcf file "

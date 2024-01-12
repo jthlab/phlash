@@ -35,3 +35,21 @@ def test_ts():
     assert d["het_matrix"].max() == 3
     assert d["het_matrix"].sum() == 570
     assert np.all(d["afs"] == [507, 172, 63])
+
+
+def test_ts_mask_missing():
+    sim = msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
+    tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)])
+    d = tsc.get_data(100)
+    assert np.all(d["het_matrix"] != -1)
+    assert np.all(
+        d["afs"]
+        == tsc.ts.allele_frequency_spectrum(span_normalise=False, polarised=True)[1:-1]
+    )
+
+
+def test_ts_mask():
+    sim = msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
+    tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)], mask=[(250, 1000)])
+    d = tsc.get_data(100)
+    assert np.all(d["het_matrix"][:, 2:10] == -1)
