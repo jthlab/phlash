@@ -1,5 +1,4 @@
 import numpy as np
-import pulp as pl
 from jax import vmap
 
 from eastbay.size_history import SizeHistory
@@ -76,6 +75,10 @@ def _find_confidence_bands(
     Raises:
         ValueError: If T and A have different shapes.
     """
+    # defer the import to here as it prints some annoying warning messages that
+    # most users don't need to see
+    import pulp as pl
+
     if solver is None:
         solver = pl.GUROBI()
     N, K = A.shape
