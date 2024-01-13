@@ -81,7 +81,7 @@ class Contig(ABC):
     def to_chunked(
         self, overlap: int, chunk_size: int, window_size: int = 100
     ) -> ChunkedContig:
-        d = self.get_data(overlap)
+        d = self.get_data(window_size)
         ch = _chunk_het_matrix(
             het_matrix=d["het_matrix"], overlap=overlap, chunk_size=chunk_size
         )
