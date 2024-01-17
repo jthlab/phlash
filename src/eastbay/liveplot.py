@@ -1,8 +1,11 @@
+import uuid
+
 import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objs as go
 from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
+from dash.exceptions import PreventUpdate
 from jax import jit, vmap
 
 from eastbay.log import getLogger
@@ -48,7 +51,7 @@ class _IPythonLivePlotDash:
             self._x = np.geomspace(truth.eta.t[1], 2 * truth.eta.t[-1], 1000)
             self._fig.add_trace(
                 go.Scatter(
-                    x=np.append(truth.eta.t, 5 * truth.eta.t[-1]),
+                    x=np.append(truth.eta.t, 2 * truth.eta.t[-1]),
                     y=np.append(truth.eta.Ne, truth.eta.Ne[-1]),
                     mode="lines",
                     line=dict(color="black"),
@@ -82,21 +85,38 @@ class _IPythonLivePlotDash:
             )
         )
 
+        # can configure download option to be svg instead
+        # config = {
+        #   'toImageButtonOptions': {
+        #     'format': 'svg', # one of png, svg, jpeg, webp
+        #     'filename': 'custom_image',
+        #     'height': 500,
+        #     'width': 700,
+        #     'scale': 1 # Multiply title/legend/axis/canvas sizes by this factor
+        #   }
+        # }
+        timestamp = uuid.uuid1()
         self.app.layout = html.Div(
             [
-                dcc.Graph(id="live-graph", figure=self._fig, mathjax=True),
+                dcc.Graph(id=f"live-graph-{timestamp}", figure=self._fig, mathjax=True),
                 dcc.Interval(
-                    id="interval-component",
+                    id=f"interval-component-{timestamp}",
                     interval=1 * 1000,  # in milliseconds
                     n_intervals=0,
                 ),
             ]
         )
 
+        self._changed = False
+
         @self.app.callback(
-            Output("live-graph", "figure"), [Input("interval-component", "n_intervals")]
+            Output(f"live-graph-{timestamp}", "figure"),
+            [Input(f"interval-component-{timestamp}", "n_intervals")],
         )
         def update_graph_live(n):
+            if not self._changed:
+                raise PreventUpdate
+            self._changed = False
             return self._fig
 
         def qtiles(dms):
@@ -136,6 +156,7 @@ class _IPythonLivePlotDash:
         self._fig.update_yaxes(
             type="log", range=np.log10([0.5 * q025.min(), 2 * q975.max()])
         )
+        self._changed = True
 
 
 class _IPythonLivePlot:
