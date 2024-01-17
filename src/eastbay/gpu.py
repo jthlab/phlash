@@ -137,21 +137,25 @@ class _PSMCKernelBase:
         ASSERT_DRV(err)
 
     def __del__(self):
-        (err,) = cuda.cuModuleUnload(self._mod)
-        ASSERT_DRV(err)
+        # if we die before the constructor has finished, some of these attributes
+        # might not exist, so we use hasattr() everywhere.
+        if hasattr(self, "_mod"):
+            (err,) = cuda.cuModuleUnload(self._mod)
+            ASSERT_DRV(err)
         for a in (
-            self._data_gpu,
-            self._L_max_gpu,
-            self._inds_gpu,
-            self._pa_gpu,
-            self._ll_gpu,
-            self._dlog_gpu,
+            "_data_gpu",
+            "_L_max_gpu",
+            "_inds_gpu",
+            "_pa_gpu",
+            "_ll_gpu",
+            "_dlog_gpu",
         ):
-            if a is not None:
-                (err,) = cuda.cuMemFree(a)
+            if hasattr(self, a) and getattr(self, a) is not None:
+                (err,) = cuda.cuMemFree(getattr(self, a))
                 ASSERT_DRV(err)
-        (err,) = cuda.cuStreamDestroy(self._stream)
-        ASSERT_DRV(err)
+        if hasattr(self, "_stream"):
+            (err,) = cuda.cuStreamDestroy(self._stream)
+            ASSERT_DRV(err)
 
     @property
     def float_type(self):
