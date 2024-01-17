@@ -10,6 +10,7 @@ from jax import grad, jit
 from jax import numpy as jnp
 from jax import vmap
 from jax.flatten_util import ravel_pytree
+from jaxlib.xla_extension import XlaRuntimeError
 
 import eastbay.hmm
 import eastbay.liveplot
@@ -291,8 +292,16 @@ def fit(
                         f"age={i - best_elpd[0]:d}"
                     )
                 cb(dms())
-    except KeyboardInterrupt:
-        pass  # if we break out, just return the most recent state
+    except (KeyboardInterrupt, XlaRuntimeError) as e:
+        if isinstance(e, XlaRuntimeError):
+            # this might be due to keyboard interrupt while we were inside the gpu
+            # callback. unfortunately, the jax exception appears to just contain a big
+            # string and is not more structured, so there is no better way to check for
+            # KeyboardException than grepping the error message.
+            (msg,) = e.args
+            if not msg.find("CpuCallback error: KeyboardInterrupt"):
+                raise
+        logger.info("Caught Ctrl-C; returning current estimates")
 
     # convert to list of dms, easier for the end user who doesn't know jax
     return tree_unstack(dms())
