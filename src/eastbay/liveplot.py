@@ -15,6 +15,18 @@ from eastbay.util import tree_stack
 logger = getLogger(__name__)
 
 
+# singleton dash instance. shared amongst all liveplots.
+_app = None
+_app_finished = {}
+
+
+def _get_app():
+    global _app
+    if _app is None:
+        _app = Dash(__name__)
+    return _app
+
+
 def _is_running_in_jupyter():
     try:
         from IPython import get_ipython
@@ -37,8 +49,7 @@ def style_axis(ax: "matplotlib.axes.Axes"):
 
 class _IPythonLivePlotDash:
     def __init__(self, truth: DemographicModel = None):
-        # enable latex display
-        self.app = Dash(__name__)
+        _app_finished[self] = False
         self._x = None
         self._fig = go.Figure()
         self._fig.update_layout(
@@ -110,14 +121,17 @@ class _IPythonLivePlotDash:
         self._changed = False
 
         @self.app.callback(
-            Output(f"live-graph-{timestamp}", "figure"),
+            [
+                Output(f"live-graph-{timestamp}", "figure"),
+                Output(f"interval-component-{timestamp}", "disabled"),
+            ],
             [Input(f"interval-component-{timestamp}", "n_intervals")],
         )
         def update_graph_live(n):
             if not self._changed:
                 raise PreventUpdate
             self._changed = False
-            return self._fig
+            return self._fig, _app_finished[self]
 
         def qtiles(dms):
             def f(dm):
@@ -129,6 +143,17 @@ class _IPythonLivePlotDash:
 
         self._qtiles = jit(qtiles)
         self.app.run(jupyter_mode="inline")
+
+    def finished(self):
+        _app_finished[self] = True
+
+    def __del__(self):
+        super().__del__()
+        self.finished()
+
+    @property
+    def app(self):
+        return _get_app()
 
     def __call__(self, dms: DemographicModel):
         if self._x is None:
