@@ -242,8 +242,8 @@ def fit(
     # build the plot callback
     if not options.get("callback"):
         plotter = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
-        if not mutation_rate:
-            plotter._ax.set_xlabel(f"Time ($\\theta={init.theta:.4g}$)")
+        # if not mutation_rate:
+        #     plotter._ax.set_xlabel(f"Time ($\\theta={init.theta:.4g}$)")
         counter = it.count(1)
 
         def cb(dms):
