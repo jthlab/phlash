@@ -136,7 +136,7 @@ class _PSMCKernelBase:
         err, self._stream = cuda.cuStreamCreate(0)
         ASSERT_DRV(err)
 
-    def _unload(self):
+    def __del__(self):
         (err,) = cuda.cuModuleUnload(self._mod)
         ASSERT_DRV(err)
         for a in (
@@ -158,16 +158,6 @@ class _PSMCKernelBase:
         if self.double_precision:
             return np.float64
         return np.float32
-
-    @singledispatchmethod
-    def loglik(self, pp: PSMCParams, index: int):
-        log_params = tree_map(jnp.log, pp)
-        return _psmc_ll(log_params, index=index, kern=self)
-
-    # convenience overload mostly to help test code
-    @loglik.register
-    def _(self, dm: eastbay.size_history.DemographicModel, index):
-        return self.loglik(PSMCParams.from_dm(dm), index)
 
     def __call__(
         self, pp: PSMCParams, index: int, grad: bool, barrier: threading.Barrier
@@ -312,7 +302,7 @@ class _PSMCKernelBase:
         return ret
 
 
-class PSMCKernel(_PSMCKernelBase):
+class PSMCKernel:
     "Spread kernel evalution across multiple devices"
 
     def __init__(self, M, data, double_precision=False, num_gpus: int = None):
@@ -330,9 +320,21 @@ class PSMCKernel(_PSMCKernelBase):
             ASSERT_DRV(err)
             self.gpu_kernels.append(_PSMCKernelBase(M, data, double_precision))
 
-    def __del__(self):
-        for kern in self.gpu_kernels:
-            kern._unload()
+    @property
+    def float_type(self):
+        if self.double_precision:
+            return np.float64
+        return np.float32
+
+    @singledispatchmethod
+    def loglik(self, pp: PSMCParams, index: int):
+        log_params = tree_map(jnp.log, pp)
+        return _psmc_ll(log_params, index=index, kern=self)
+
+    # convenience overload mostly to help test code
+    @loglik.register
+    def _(self, dm: eastbay.size_history.DemographicModel, index):
+        return self.loglik(PSMCParams.from_dm(dm), index)
 
     def _initialize_devices(self, num_gpus: int):
         """
