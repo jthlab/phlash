@@ -1,9 +1,55 @@
-[build-system]
-# AVOID CHANGING REQUIRES: IT WILL BE UPDATED BY PYSCAFFOLD!
-requires = ["setuptools>=46.1.0", "setuptools_scm[toml]>=5"]
-build-backend = "setuptools.build_meta"
+[project]
+name = "eastbay"
+version = "0.1.0"
+description = "Add a short description here!"
+authors = [
+    {name = "Jonathan Terhorst", email = "jonth@umich.edu"},
+]
+dependencies = [
+    "blackjax",
+    "cuda-python>=12",
+    "cyvcf2",
+    "importlib-metadata; python_version<\"3.8\"",
+    "intervaltree",
+    "jax",
+    "jax_dataclasses",
+    "jaxlib",
+    "joblib",
+    "matplotlib>3",
+    "msprime",
+    "numpy>1.20",
+    "optax",
+    "scipy>1.0",
+    "stdpopsim",
+    "tqdm",
+    "tskit",
+]
+requires-python = ">=3.10"
+readme = "README.md"
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/pyscaffold/pyscaffold/"
+Documentation = "https://pyscaffold.org/"
+
+[project.optional-dependencies]
+testing = [
+    "pytest",
+    "pytest-cov",
+    "setuptools",
+]
+
+[tool.pdm]
+distribution = false
+package-dir = "src"
+
+[tool.isort]
+profile = "black"
+known_first_party = "eastbay"
 
 [tool.setuptools_scm]
-# For smarter version schemes and other configuration options,
-# check out https://github.com/pypa/setuptools_scm
-version_scheme = "no-guess-dev"
