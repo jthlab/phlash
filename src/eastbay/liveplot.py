@@ -1,3 +1,4 @@
+import time
 import uuid
 
 import jax.numpy as jnp
@@ -9,22 +10,9 @@ from dash.exceptions import PreventUpdate
 from jax import jit, vmap
 
 from eastbay.log import getLogger
-from eastbay.size_history import DemographicModel, SizeHistory
-from eastbay.util import tree_stack
+from eastbay.size_history import DemographicModel
 
 logger = getLogger(__name__)
-
-
-# singleton dash instance. shared amongst all liveplots.
-_app = None
-_app_finished = {}
-
-
-def _get_app():
-    global _app
-    if _app is None:
-        _app = Dash(__name__)
-    return _app
 
 
 def _is_running_in_jupyter():
@@ -39,17 +27,29 @@ def _is_running_in_jupyter():
     return True
 
 
-def style_axis(ax: "matplotlib.axes.Axes"):
-    ax.spines[["right", "top"]].set_visible(False)
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("Time (generations)")
-    ax.set_ylabel("$N_e$")
+def liveplot_cb(
+    truth: DemographicModel = None,
+    plot_every: int = 1,
+):
+    def f(dms):
+        return None
+
+    try:
+        if _is_running_in_jupyter():
+            f = _IPythonLivePlotDash(truth)  # noqa: F811
+    except Exception as e:
+        logger.debug("Live plot init failed: %s", str(e))
+        raise
+
+    return f
 
 
 class _IPythonLivePlotDash:
+    _dash_port = 8050
+
     def __init__(self, truth: DemographicModel = None):
-        _app_finished[self] = False
+        self._port = self.__class__._dash_port
+        self.__class__._dash_port += 1
         self._x = None
         self._fig = go.Figure()
         self._fig.update_layout(
@@ -107,31 +107,40 @@ class _IPythonLivePlotDash:
         #   }
         # }
         timestamp = uuid.uuid1()
-        self.app.layout = html.Div(
+        self._app = Dash(__name__, requests_pathname_prefix=f"/proxy/{self._port}/")
+        self._app.layout = html.Div(
             [
                 dcc.Graph(id=f"live-graph-{timestamp}", figure=self._fig, mathjax=True),
                 dcc.Interval(
                     id=f"interval-component-{timestamp}",
                     interval=1 * 1000,  # in milliseconds
                     n_intervals=0,
+                    disabled=False,
                 ),
             ]
         )
 
         self._changed = False
+        self.finished = self.did_finish = False
 
-        @self.app.callback(
-            [
-                Output(f"live-graph-{timestamp}", "figure"),
-                Output(f"interval-component-{timestamp}", "disabled"),
-            ],
+        @self._app.callback(
+            Output(f"live-graph-{timestamp}", "figure"),
             [Input(f"interval-component-{timestamp}", "n_intervals")],
         )
         def update_graph_live(n):
             if not self._changed:
                 raise PreventUpdate
             self._changed = False
-            return self._fig, _app_finished[self]
+            return self._fig
+
+        @self._app.callback(
+            Output(f"interval-component-{timestamp}", "disabled"),
+            [Input(f"interval-component-{timestamp}", "n_intervals")],
+        )
+        def is_finished(n):
+            if self.finished:
+                self.did_finish = True
+            return self.finished
 
         def qtiles(dms):
             def f(dm):
@@ -142,18 +151,12 @@ class _IPythonLivePlotDash:
             return jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
 
         self._qtiles = jit(qtiles)
-        self.app.run(jupyter_mode="inline")
-
-    def finished(self):
-        _app_finished[self] = True
-
-    def __del__(self):
-        super().__del__()
-        self.finished()
-
-    @property
-    def app(self):
-        return _get_app()
+        self._app.run(
+            host="127.0.0.1",
+            port=self._port,
+            jupyter_mode="inline",
+            jupyter_server_url="/",
+        )
 
     def __call__(self, dms: DemographicModel):
         if self._x is None:
@@ -178,88 +181,15 @@ class _IPythonLivePlotDash:
             y=y_combined,
         )
 
-        self._fig.update_yaxes(
-            type="log", range=np.log10([0.5 * q025.min(), 2 * q975.max()])
-        )
+        # allow the user to zoom in or out instead
+        # self._fig.update_yaxes(
+        #     type="log", range=np.log10([0.5 * q025.min(), 2 * q975.max()])
+        # )
         self._changed = True
 
-
-class _IPythonLivePlot:
-    def __init__(
-        self,
-        truth: DemographicModel = None,
-    ):
-        import matplotlib.pyplot as plt
-        from IPython.display import display, set_matplotlib_formats
-
-        set_matplotlib_formats("svg")
-        self._fig, self._ax = plt.subplots()
-        ax = self._ax
-        style_axis(ax)
-        self._x = None
-        if truth is not None:
-            ax.plot(
-                np.append(truth.eta.t, 5 * truth.eta.t[-1]),
-                np.append(truth.eta.Ne, truth.eta.Ne[-1]),
-                color="black",
-            )
-            ax.set_ylim(0.2 * truth.eta.Ne.min(), 5 * truth.eta.Ne.max())
-            self._x = np.geomspace(truth.eta.t[1], 5 * truth.eta.t[-1], 1000)
-        (self._line,) = ax.plot([], [], color="tab:blue")
-        self._poly = [ax.fill_between([], 0, 0, color="tab:blue")]
-        self._display = display(self._fig, display_id=True)
-
-        def qtiles(dms):
-            def f(dm):
-                return dm.eta(self._x)
-
-            ys = vmap(f)(dms)
-            Ne = 1 / 2 / ys
-            return jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
-
-        self._qtiles = jit(qtiles)
-
-    def __call__(self, dms: DemographicModel):
-        if self._x is None:
-            self._x = np.geomspace(dms.eta.t[:, 1].min(), dms.eta.t[:, -1].max(), 1000)
-        q025, m, q975 = self._qtiles(dms)
-        self._line.set_data(self._x, m)
-        self._poly[0].remove()
-        self._poly[0] = self._ax.fill_between(
-            self._x, q025, q975, color="tab:blue", alpha=0.1
-        )
-        self._display.update(self._fig)
-
-
-def liveplot_cb(
-    truth: "eastbay.size_history.DemographicModel" = None,
-    plot_every: int = 1,
-):
-    def f(dms):
-        return None
-
-    try:
-        if _is_running_in_jupyter():
-            f = _IPythonLivePlotDash(truth)  # noqa: F811
-            # enable plotly rendering of latex equations
-    except Exception as e:
-        logger.debug("Live plot init failed: %s", str(e))
-        raise
-
-    return f
-
-
-def plot_posterior(dms: list[DemographicModel], ax: "matplotlib.axes.Axes" = None):
-    if ax is None:
-        import matplotlib.pyplot as plt
-
-        ax = plt.gca()
-    dms = tree_stack(dms)
-    t1, tM = jnp.quantile(dms.eta.t[:, 1:], jnp.array([0.025, 0.975]))
-    t = jnp.geomspace(t1, tM, 1000)
-    y = vmap(SizeHistory.__call__, (0, None))(dms.eta, t)
-    Ne = 1.0 / 2.0 / y
-    q025, m, q975 = jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
-    ax.plot(t, m, color="tab:blue")
-    ax.fill_between(t, q025, q975, color="tab:blue", alpha=0.1)
-    style_axis(ax)
+    def finish(self):
+        self.finished = True
+        # wait for the callback to disable
+        while not self.did_finish:
+            time.sleep(0.1)
+        logger.debug("finished successfully")
