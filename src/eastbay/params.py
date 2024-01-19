@@ -65,7 +65,7 @@ class MCMCParams:
     c_tr: jax.Array
     log_rho: float
     theta: jdc.Static[float]
-    log_alpha: jdc.Static[float]
+    alpha: jdc.Static[float]
 
     @classmethod
     def from_linear(
@@ -86,7 +86,7 @@ class MCMCParams:
             t_tr=jnp.log(jnp.array([t1, dtM])),
             theta=theta,
             log_rho=jnp.log(rho),
-            log_alpha=jnp.log(alpha),
+            alpha=alpha,
         )
 
     def to_dm(self) -> eastbay.size_history.DemographicModel:
@@ -109,10 +109,6 @@ class MCMCParams:
     @property
     def rho(self):
         return jnp.exp(self.log_rho)
-
-    @property
-    def alpha(self):
-        return jnp.exp(self.log_alpha)
 
     @property
     def t(self):
