@@ -106,7 +106,7 @@ class SizeHistory(NamedTuple):
 
     @property
     def Ne(self):
-        return 1.0 / (2 * self.c)
+        return 1.0 / (2.0 * self.c)
 
     @property
     def K(self):
@@ -136,8 +136,10 @@ class SizeHistory(NamedTuple):
         Ci = -jnp.diff(self.surv())
         return jnp.concatenate([1.0 - Ci.sum(keepdims=True), Ci])
 
-    def __call__(self, x: float) -> float:
+    def __call__(self, x: float, Ne: bool = False) -> float:
         i = jnp.searchsorted(jnp.append(self.t, jnp.inf), x, "right") - 1
+        if Ne:
+            return 1.0 / 2.0 / self.c[i]
         return self.c[i]
         # return self.to_pp()(x)
 
