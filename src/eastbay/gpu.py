@@ -485,6 +485,8 @@ def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
         ll, kbi = res
     kbi = jnp.atleast_1d(kbi).reshape(-1)[0]  # this will be (redundantly) broadcasted
     # send notice of keyboard interrupt, if it happened
+    # TODO: it seems like this slowed everything down. maybe try to kbi using has_aux
+    # instead of a callback.
     jax.experimental.io_callback(kern.kbi_cb, None, kbi)
     if grad:
         return ll, grad
