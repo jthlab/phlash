@@ -121,6 +121,8 @@ def fit(
     afs, chunks = _init_data(data, window_size, overlap, chunk_size, max_samples)
     # the mutation rate per generation, if known.
     mutation_rate = options.get("mutation_rate")
+    # if the elpd does not improve for this many iterations, exit the training loop
+    elpd_cutoff = options.get("elpd_cutoff", 100)
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -274,6 +276,7 @@ def fit(
 
     try:
         ema = best_elpd = None
+        a = 0
         with tqdm.trange(
             niter, disable=not options.get("progress", True), desc="Fitting model"
         ) as pbar:
@@ -289,16 +292,18 @@ def fit(
                     else:
                         ema = 0.9 * ema + 0.1 * e
                     if best_elpd is None or ema > best_elpd[1]:
+                        a = 0
                         best_elpd = (i, ema, state)
-                    if i - best_elpd[0] > 100:
+                    else:
+                        a += 1
+                    if i - best_elpd[0] > elpd_cutoff:
                         logger.info(
                             "The expected log-predictive density has not improved in "
-                            "the last 100 iterations; exiting."
+                            f"the last {elpd_cutoff} iterations; exiting."
                         )
                         break
                     pbar.set_description(
-                        f"elpd={ema:.0f} best={best_elpd[1]:.0f} "
-                        f"age={i - best_elpd[0]:d}"
+                        f"elpd={ema:.2g} best={best_elpd[1]:.2g} a={a}"
                     )
                 cb(dms())
                 if kbi:
