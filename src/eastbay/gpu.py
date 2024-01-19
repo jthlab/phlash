@@ -1,4 +1,5 @@
 import ctypes
+import signal
 import threading
 import warnings
 from functools import partial, singledispatchmethod
@@ -264,8 +265,8 @@ class _PSMCKernelBase:
 
         # all threads wait before sync -- without this I was seeing a problem where
         # GPU execution proceeded sequentially across threads -- it's as though
-        # streamSynchronize does not release the GIL, though from inspecting the source,
-        # it does? idk
+        # streamSynchronize does not release the GIL, though from inspecting the
+        # source, it does? idk
         barrier.wait()
 
         (err,) = cuda.cuStreamSynchronize(self._stream)
@@ -307,9 +308,25 @@ class _PSMCKernelBase:
 
 
 class PSMCKernel:
-    "Spread kernel evalution across multiple devices"
+    """Spread kernel evalution across multiple devices.
 
-    def __init__(self, M, data, double_precision=False, num_gpus: int = None):
+    Args:
+        - M: discretization level. should always be 16.
+        - data: data matrix.
+        - double_precision: if True, use float64 on the GPU. (generally not worth it in
+            my experience.)
+        - kbi_cb: a keyboard interrupt callback, see __call__().
+    """
+
+    def __init__(
+        self, M, data, double_precision=False, num_gpus: int = None, kbi_cb=None
+    ):
+        if kbi_cb is None:
+
+            def kbi_cb(_):
+                pass
+
+        self.kbi_cb = kbi_cb
         CudaInitializer.initialize_cuda()
         if num_gpus is not None:
             assert num_gpus > 0
@@ -357,7 +374,32 @@ class PSMCKernel:
             ret.append(cuDevice)
         return ret
 
-    def __call__(
+    def __call__(self, pp: PSMCParams, index: int, grad: bool):
+        # the purpose of this function is to gracefully handle Ctrl-C when jax is inside
+        # of the GPU callback. with no special handling, Jax (really XLA I think) will
+        # emit a horrifying series of logs and stack traces and die. Instead, what we do
+        # is temporarily disable SIGINT and capture it to a flag. this means that Ctrl-C
+        # won't instantly terminate, but usually the GPU kernel returns in <200ms. Then
+        # the flag is propagated outside of jax jit territory by means of io_callback().
+        # (See the implementation of psmc_ll, below).
+        kbi = False
+
+        def kbi_cb(sig, frame):
+            nonlocal kbi
+            kbi = True
+
+        s = signal.signal(signal.SIGINT, kbi_cb)
+        ret = self._wrapped_call(pp, index, grad)
+        if not grad:
+            # retrun always a tuple now that we are including kbinterrupt flag also
+            ret = (ret,)
+        signal.signal(signal.SIGINT, s)
+        # if the pure_callback is called inside vmap, it expects this to be broadcasted.
+        # the broadcast dims are the same as the primal (loglik) dims.
+        ret += (jnp.full(ret[0].shape, kbi, dtype=jnp.bool_),)
+        return ret
+
+    def _wrapped_call(
         self, pp: PSMCParams, index: int, grad: bool
     ) -> tuple[float, PSMCParams]:
         def f(a):
@@ -423,10 +465,9 @@ def _psmc_ll_fwd(log_params, index, kern):
 
 def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
     params = tree_map(jnp.exp, log_params)
-    result_shape_dtype = jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64)
+    result_shape_dtype = (jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64),)
     if grad:
-        result_shape_dtype = (
-            result_shape_dtype,
+        result_shape_dtype += (
             PSMCParams(
                 *[
                     jax.ShapeDtypeStruct(shape=(params.M,), dtype=kern.float_type)
@@ -434,10 +475,20 @@ def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
                 ],
             ),
         )
-    ret = jax.pure_callback(
+    result_shape_dtype += (jax.ShapeDtypeStruct(shape=(), dtype=jnp.bool_),)
+    res = jax.pure_callback(
         kern, result_shape_dtype, pp=params, index=index, grad=grad, vectorized=True
     )
-    return ret
+    if grad:
+        ll, grad, kbi = res
+    else:
+        ll, kbi = res
+    kbi = jnp.atleast_1d(kbi).reshape(-1)[0]  # this will be (redundantly) broadcasted
+    # send notice of keyboard interrupt, if it happened
+    jax.experimental.io_callback(kern.kbi_cb, None, kbi)
+    if grad:
+        return ll, grad
+    return ll
 
 
 def _psmc_ll_bwd(kern, df, g):

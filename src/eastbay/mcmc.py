@@ -139,6 +139,12 @@ def fit(
         )
     N = len(chunks)
 
+    kbi = False
+
+    def kbi_cb(k):
+        nonlocal kbi
+        kbi = k
+
     # initialize the model
     init = options.get("init")
     if init is None:
@@ -198,6 +204,7 @@ def fit(
         M=M,
         data=np.ascontiguousarray(data_chunks),
         double_precision=options.get("double_precision", False),
+        kbi_cb=kbi_cb,
     )
 
     # if there is a test set, define elpd() function for computing expected
@@ -209,7 +216,10 @@ def fit(
         test_data = d["het_matrix"][:max_samples]
         N_test = test_data.shape[0]
         test_kern = PSMCKernel(
-            M=M, data=np.ascontiguousarray(d["het_matrix"]), double_precision=False
+            M=M,
+            data=np.ascontiguousarray(d["het_matrix"]),
+            double_precision=False,
+            kbi_cb=kbi_cb,
         )
 
         @jit
@@ -285,13 +295,15 @@ def fit(
                             "The expected log-predictive density has not improved in "
                             "the last 100 iterations; exiting."
                         )
-                        state = best_elpd[2]
                         break
                     pbar.set_description(
                         f"elpd={ema:.0f} best={best_elpd[1]:.0f} "
                         f"age={i - best_elpd[0]:d}"
                     )
                 cb(dms())
+                if kbi:
+                    raise KeyboardInterrupt
+
     except (KeyboardInterrupt, XlaRuntimeError) as e:
         if isinstance(e, XlaRuntimeError):
             # this might be due to keyboard interrupt while we were inside the gpu
@@ -306,8 +318,8 @@ def fit(
     # notify the live plot that we are done. fails if we are not using liveplot.
     try:
         plotter.finish()
-    except Exception as e:
-        logger.debug(e)
+    except Exception:
+        pass
 
     # convert to list of dms, easier for the end user who doesn't know jax
     return tree_unstack(dms())
