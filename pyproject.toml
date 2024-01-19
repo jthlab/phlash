@@ -44,10 +44,6 @@ testing = [
     "setuptools",
 ]
 
-[tool.pdm]
-distribution = false
-package-dir = "src"
-
 [tool.isort]
 profile = "black"
 known_first_party = "eastbay"
