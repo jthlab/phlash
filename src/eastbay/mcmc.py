@@ -303,5 +303,11 @@ def fit(
                 raise
         logger.info("Caught Ctrl-C; returning current estimates")
 
+    # notify the live plot that we are done. fails if we are not using liveplot.
+    try:
+        plotter.finish()
+    except Exception as e:
+        logger.debug(e)
+
     # convert to list of dms, easier for the end user who doesn't know jax
     return tree_unstack(dms())
