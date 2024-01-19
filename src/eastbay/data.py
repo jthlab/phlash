@@ -263,6 +263,7 @@ def _read_vcf(
             i = int(x / window_size)
             ty = variant.gt_types
             H[:, i] += ty == 1
+            # TODO this doesn't handle missing entries correctly
             afs[ty[ty < 3].sum()] += 1
     return dict(het_matrix=H, afs=afs[1:-1])
 
@@ -370,7 +371,7 @@ def stdpopsim_dataset(
 
     # representation of true(simulated) demography
     md = model.model.debug()
-    t_min = 1e0
+    t_min = 1e1
     t_max = max(1e5, md.epochs[-1].start_time + 1)
     assert np.isinf(md.epochs[-1].end_time)
     t = np.geomspace(t_min, t_max, 1000)
