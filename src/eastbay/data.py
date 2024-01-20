@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import NamedTuple
 
 import cyvcf2
@@ -78,6 +78,14 @@ class Contig(ABC):
         "Length of sequence"
         ...
 
+    def to_basic(self) -> "RawContig":
+        """Convert to a RawContig.
+
+        Note:
+            This method is useful for pickling a Contig where the get_data()
+            step takes a long time to run.
+        """
+
     def to_chunked(
         self, overlap: int, chunk_size: int, window_size: int = 100
     ) -> ChunkedContig:
@@ -88,7 +96,33 @@ class Contig(ABC):
         return ChunkedContig(chunks=ch, afs=d["afs"])
 
 
-@dataclass
+@dataclass(frozen=True)
+class RawContig(Contig):
+    "A contig with pre-computed het matrix and afs."
+    het_matrix: Int8[Array, "N L"]
+    afs: Int[Array, "n"]
+    window_size: int
+
+    @property
+    def N(self):
+        # the het matrix has one row per diploid pair, so the number of ploids
+        # is twice its first dimension.
+        return 2 * self.het_matrix.shape[0]
+
+    @property
+    def L(self):
+        return self.het_matrix.shape[1] * self.window_size
+
+    def get_data(self, window_size: int):
+        if window_size != self.window_size:
+            raise ValueError(
+                f"This contig was created with a window size of {self.window_size} "
+                "but you requested {window_size}"
+            )
+        return asdict(self)
+
+
+@dataclass(frozen=True)
 class TreeSequenceContig(Contig):
     """Read data from a tree sequence.
 
@@ -185,7 +219,7 @@ def _read_ts(
     return G
 
 
-@dataclass
+@dataclass(frozen=True)
 class VcfContig:
     """Read data from a VCF file.
 
