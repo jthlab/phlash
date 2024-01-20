@@ -1,3 +1,4 @@
+import socket
 import time
 import uuid
 
@@ -44,12 +45,14 @@ def liveplot_cb(
     return f
 
 
-class _IPythonLivePlotDash:
-    _dash_port = 8050
+def _random_port() -> int:
+    sock = socket.socket()
+    sock.bind(("", 0))
+    return sock.getsockname()[1]
 
+
+class _IPythonLivePlotDash:
     def __init__(self, truth: DemographicModel = None):
-        self._port = self.__class__._dash_port
-        self.__class__._dash_port += 1
         self._x = None
         self._fig = go.Figure()
         self._fig.update_layout(
@@ -107,6 +110,7 @@ class _IPythonLivePlotDash:
         #   }
         # }
         timestamp = uuid.uuid1()
+        self._port = _random_port()
         self._app = Dash(__name__, requests_pathname_prefix=f"/proxy/{self._port}/")
         self._app.layout = html.Div(
             [
@@ -142,6 +146,13 @@ class _IPythonLivePlotDash:
                 self.did_finish = True
             return self.finished
 
+        self._app.run(
+            host="127.0.0.1",
+            port=self._port,
+            jupyter_mode="inline",
+            jupyter_server_url="/",
+        )
+
         def qtiles(dms):
             def f(dm):
                 return dm.eta(self._x)
@@ -151,12 +162,6 @@ class _IPythonLivePlotDash:
             return jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
 
         self._qtiles = jit(qtiles)
-        self._app.run(
-            host="127.0.0.1",
-            port=self._port,
-            jupyter_mode="inline",
-            jupyter_server_url="/",
-        )
 
     def __call__(self, dms: DemographicModel):
         if self._x is None:
