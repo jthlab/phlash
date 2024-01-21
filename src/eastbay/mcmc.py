@@ -303,7 +303,7 @@ def fit(
                         )
                         break
                     pbar.set_description(
-                        f"elpd={ema:.2g} best={best_elpd[1]:.2g} a={a}"
+                        f"elpd={ema:.2f} %best={ema/best_elpd[1]:.3f} a={a}"
                     )
                 cb(dms())
                 if kbi:
