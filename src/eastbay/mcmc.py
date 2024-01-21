@@ -15,7 +15,6 @@ from jaxlib.xla_extension import XlaRuntimeError
 import eastbay.hmm
 import eastbay.liveplot
 from eastbay.data import Contig
-from eastbay.gpu import PSMCKernel
 from eastbay.log import getLogger
 from eastbay.model import log_density
 from eastbay.params import MCMCParams
@@ -202,6 +201,9 @@ def fit(
     # onto the GPU whereas the warmup chunks are processed by native jax.
     warmup_chunks, data_chunks = np.split(chunks, [overlap], axis=1)
     # construct the GPU kernel, load the data onto it
+    # load this here to keep from having to initialize CUDA on overall package load
+    from eastbay.gpu import PSMCKernel
+
     train_kern = PSMCKernel(
         M=M,
         data=np.ascontiguousarray(data_chunks),
