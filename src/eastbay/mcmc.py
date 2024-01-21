@@ -155,9 +155,9 @@ def fit(
         logger.info("Scaled mutation rate Θ=%f", theta)
         if mutation_rate:
             # if mutation rate is known then pick t1, tM such that in rescaled time,
-            # t1=1, tM=1e6 generations. (seems like a good default?)
+            # t1=10, tM=1e4 generations. (seems like a good default?)
             N0 = theta / window_size / 4 / mutation_rate
-            t1, tM = (10**x / 2 / N0 for x in [0, 6])
+            t1, tM = (10**x / 2 / N0 for x in [1, 4])
         else:
             t1 = 1e-4
             tM = 15.0
