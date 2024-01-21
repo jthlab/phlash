@@ -8,6 +8,7 @@ import cyvcf2
 import numpy as np
 import tqdm.auto as tqdm
 import tskit
+import tszip
 from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 
