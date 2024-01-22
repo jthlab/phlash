@@ -64,7 +64,12 @@ def _chunk_het_matrix(
 class Contig(ABC):
     @abstractmethod
     def get_data(self, window_size: int) -> dict[str, np.ndarray]:
-        "Compute the heterozygote matrix and AFS for this contig."
+        """Compute the heterozygote matrix and AFS for this contig.
+
+        Returns:
+            dict with entries 'het_matrix' and 'afs'. these entries can be None,
+            indicating that the contig has no data for that component.
+        """
         ...
 
     @property
@@ -91,9 +96,12 @@ class Contig(ABC):
         self, overlap: int, chunk_size: int, window_size: int = 100
     ) -> ChunkedContig:
         d = self.get_data(window_size)
-        ch = _chunk_het_matrix(
-            het_matrix=d["het_matrix"], overlap=overlap, chunk_size=chunk_size
-        )
+        if d["het_matrix"] is None:
+            ch = None
+        else:
+            ch = _chunk_het_matrix(
+                het_matrix=d["het_matrix"], overlap=overlap, chunk_size=chunk_size
+            )
         return ChunkedContig(chunks=ch, afs=d["afs"])
 
 
@@ -108,10 +116,14 @@ class RawContig(Contig):
     def N(self):
         # the het matrix has one row per diploid pair, so the number of ploids
         # is twice its first dimension.
+        if self.het_matrix is None:
+            return None
         return 2 * self.het_matrix.shape[0]
 
     @property
     def L(self):
+        if self.het_matrix is None:
+            return None
         return self.het_matrix.shape[1] * self.window_size
 
     def get_data(self, window_size: int):

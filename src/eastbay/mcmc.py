@@ -33,7 +33,6 @@ def _init_data(
 ):
     """Chunk up the data. If chunk_size is missing, set it to ~1/5th of the shortest
     contig. (This may not be optimal)."""
-    N = data[0].N
     afss = []
     chunk_size = int(min(0.2 * ds.L / window_size for ds in data))
     if chunk_size < 10 * overlap:
@@ -46,8 +45,6 @@ def _init_data(
     with ProcessPoolExecutor() as pool:
         futs = []
         for ds in data:
-            if ds.N != N:
-                raise ValueError("All datasets must have the same number of samples")
             futs.append(
                 pool.submit(
                     ds.to_chunked,
@@ -58,8 +55,10 @@ def _init_data(
             )
         for f in as_completed(futs):
             d = f.result()
-            afss.append(d.afs)
-            chunks.append(d.chunks)
+            if d.afs is not None:
+                afss.append(d.afs)
+            if d.chunks is not None:
+                chunks.append(d.chunks)
 
     assert all(a.ndim == 1 for a in afss)
     assert len({a.shape for a in afss}) == 1
@@ -212,8 +211,7 @@ def fit(
     )
 
     # if there is a test set, define elpd() function for computing expected
-    # log-predictive density
-    # used to gauge convergence.
+    # log-predictive density. used to gauge convergence.
     if test_data:
         d = test_data.get_data(window_size)
         test_afs = d["afs"]
