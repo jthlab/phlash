@@ -16,11 +16,21 @@ from eastbay.memory import memory
 from eastbay.params import PSMCParams
 
 
+class CudaError(RuntimeError):
+    def __init__(self, err):
+        self.err = err
+        RuntimeError.__init__(self, f"Cuda Error {self.err}: {self.name}")
+
+    @property
+    def name(self):
+        _, name = cuda.cuGetErrorName(self.err)
+        return name
+
+
 def ASSERT_DRV(err):
     if isinstance(err, cuda.CUresult):
         if err != cuda.CUresult.CUDA_SUCCESS:
-            _, name = cuda.cuGetErrorName(err)
-            raise RuntimeError(f"Cuda Error {err}: {name}")
+            raise CudaError(err)
     elif isinstance(err, nvrtc.nvrtcResult):
         if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
             _, name = nvrtc.nvrtcGetErrorString(error)
@@ -127,9 +137,16 @@ class _PSMCKernelBase:
     def __del__(self):
         # if we die before the constructor has finished, some of these attributes
         # might not exist, so we use hasattr() everywhere.
+        # FIXME: I see a weird bug where __del__ is called without initializing cuda.
+        # I don't understand how this can happen since it's initialized at the top of
+        # the file. everything is surrounded with try/catch blocks to guard against.
         if hasattr(self, "_mod"):
-            (err,) = cuda.cuModuleUnload(self._mod)
-            ASSERT_DRV(err)
+            try:
+                (err,) = cuda.cuModuleUnload(self._mod)
+                ASSERT_DRV(err)
+            except CudaError:
+                if CudaError.err != 3:
+                    raise
         for a in (
             "_data_gpu",
             "_L_max_gpu",
@@ -139,11 +156,19 @@ class _PSMCKernelBase:
             "_dlog_gpu",
         ):
             if hasattr(self, a) and getattr(self, a) is not None:
-                (err,) = cuda.cuMemFree(getattr(self, a))
-                ASSERT_DRV(err)
+                try:
+                    (err,) = cuda.cuMemFree(getattr(self, a))
+                    ASSERT_DRV(err)
+                except CudaError:
+                    if CudaError.err != 3:
+                        raise
         if hasattr(self, "_stream"):
-            (err,) = cuda.cuStreamDestroy(self._stream)
-            ASSERT_DRV(err)
+            try:
+                (err,) = cuda.cuStreamDestroy(self._stream)
+                ASSERT_DRV(err)
+            except CudaError:
+                if CudaError.err != 3:
+                    raise
 
     @property
     def float_type(self):
