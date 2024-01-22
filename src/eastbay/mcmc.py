@@ -1,4 +1,3 @@
-import itertools as it
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import blackjax
@@ -252,18 +251,9 @@ def fit(
         mutation_rate = options["truth"].theta
 
     # build the plot callback
-    if not options.get("callback"):
-        plotter = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
-        # if not mutation_rate:
-        #     plotter._ax.set_xlabel(f"Time ($\\theta={init.theta:.4g}$)")
-        counter = it.count(1)
-
-        def cb(dms):
-            if next(counter) % options.get("plot_every", 1) == 0:
-                plotter(dms)
-
-    else:
-        cb = options["callback"]
+    cb = options.get("callback")
+    if not cb:
+        cb = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
 
     def dms():
         ret = vmap(MCMCParams.to_dm)(state.particles)
