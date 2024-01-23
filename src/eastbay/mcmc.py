@@ -138,11 +138,13 @@ def fit(
         )
     N = len(chunks)
 
+    # keyboard interrupt handler and callback. This is used inside the gpu code in case
+    # ctrl-c was caught while the gpu kernel was executing.
     kbi = False
 
-    def kbi_cb(k):
+    def kbi_cb(*args):
         nonlocal kbi
-        kbi = k
+        kbi = True
 
     # initialize the model
     init = options.get("init")
@@ -199,7 +201,9 @@ def fit(
     # onto the GPU whereas the warmup chunks are processed by native jax.
     warmup_chunks, data_chunks = np.split(chunks, [overlap], axis=1)
     # construct the GPU kernel, load the data onto it
-    # load this here to keep from having to initialize CUDA on overall package load
+
+    # defer loading the gpu module until necessary, to keep from having to initialize
+    # CUDA on overall package load.
     from eastbay.gpu import PSMCKernel
 
     train_kern = PSMCKernel(
@@ -308,7 +312,7 @@ def fit(
             (msg,) = e.args
             if not msg.find("CpuCallback error: KeyboardInterrupt"):
                 raise
-        logger.info("Caught Ctrl-C; returning current estimates")
+        logger.warning("Caught Ctrl-C; returning current estimates")
 
     # notify the live plot that we are done. fails if we are not using liveplot.
     try:

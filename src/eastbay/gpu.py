@@ -335,7 +335,7 @@ class PSMCKernel:
     ):
         if kbi_cb is None:
 
-            def kbi_cb(_):
+            def kbi_cb(*args):
                 pass
 
         self.kbi_cb = kbi_cb
@@ -390,29 +390,17 @@ class PSMCKernel:
         # of the GPU callback. with no special handling, Jax (really XLA I think) will
         # emit a horrifying series of logs and stack traces and die. Instead, what we do
         # is temporarily disable SIGINT and capture it to a flag. this means that Ctrl-C
-        # won't instantly terminate, but usually the GPU kernel returns in <200ms. Then
-        # the flag is propagated outside of jax jit territory by means of io_callback().
+        # won't instantly terminate, but usually the GPU kernel returns in <200ms.
         # (See the implementation of psmc_ll, below).
-        kbi = False
-
-        def kbi_cb(sig, frame):
-            nonlocal kbi
-            kbi = True
-
-        s = signal.signal(signal.SIGINT, kbi_cb)
+        s = signal.signal(signal.SIGINT, self.kbi_cb)
         ret = self._wrapped_call(pp, index, grad)
-        if not grad:
-            # retrun always a tuple now that we are including kbinterrupt flag also
-            ret = (ret,)
         signal.signal(signal.SIGINT, s)
-        # if the pure_callback is called inside vmap, it expects this to be broadcasted.
-        # the broadcast dims are the same as the primal (loglik) dims.
-        ret += (jnp.full(ret[0].shape, kbi, dtype=jnp.bool_),)
         return ret
 
     def _wrapped_call(
         self, pp: PSMCParams, index: int, grad: bool
     ) -> tuple[float, PSMCParams]:
+        # this is call is wrapped in a special SIGINT handler, see above
         def f(a):
             assert np.isfinite(a).all()
 
@@ -476,9 +464,10 @@ def _psmc_ll_fwd(log_params, index, kern):
 
 def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
     params = tree_map(jnp.exp, log_params)
-    result_shape_dtype = (jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64),)
+    result_shape_dtype = jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64)
     if grad:
-        result_shape_dtype += (
+        result_shape_dtype = (
+            result_shape_dtype,
             PSMCParams(
                 *[
                     jax.ShapeDtypeStruct(shape=(params.M,), dtype=kern.float_type)
@@ -486,22 +475,9 @@ def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
                 ],
             ),
         )
-    result_shape_dtype += (jax.ShapeDtypeStruct(shape=(), dtype=jnp.bool_),)
-    res = jax.pure_callback(
+    return jax.pure_callback(
         kern, result_shape_dtype, pp=params, index=index, grad=grad, vectorized=True
     )
-    if grad:
-        ll, grad, kbi = res
-    else:
-        ll, kbi = res
-    kbi = jnp.atleast_1d(kbi).reshape(-1)[0]  # this will be (redundantly) broadcasted
-    # send notice of keyboard interrupt, if it happened
-    # TODO: it seems like this slowed everything down. maybe try to kbi using has_aux
-    # instead of a callback.
-    jax.experimental.io_callback(kern.kbi_cb, None, kbi)
-    if grad:
-        return ll, grad
-    return ll
 
 
 def _psmc_ll_bwd(kern, df, g):
