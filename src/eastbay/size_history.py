@@ -260,14 +260,14 @@ class DemographicModel(NamedTuple):
     def default(
         cls, pattern: str, theta: float, rho: float = None, t_max: float = 15.0
     ):
-        # from PSMC. these defaults seem to work pretty well.
         if rho is None:
             rho = theta
+        # from PSMC. these defaults seem to work pretty well.
         eta = _psmc_size_history(pattern=pattern, alpha=0.1, t_max=t_max)
         return cls(eta=eta, theta=theta, rho=rho)
 
     def rescale(self, mu: float) -> "DemographicModel":
-        """Rescale model from coalescent time to generations.
+        """Rescale model so that the mutation rate per unit time is mu.
 
         Args:
             mu: The mutation rate per locus per generation.
@@ -275,11 +275,14 @@ class DemographicModel(NamedTuple):
         Returns:
             Rescaled demographic model.
         """
-        N0 = self.theta / 4 / mu
-        t = 2 * N0 * self.eta.t
-        c = self.eta.c / (2 * N0)  # (diploid) effective population size
+        # W = 4 N0 mu = 4 * 1e-8 * 1e4 = 4e-4
+        # N0 = 1
+        # N1 = 1e4
+        N1_N0 = self.theta / mu  # theta = 1e-4, mu = 1e-8, N1_N0 = 1e4
+        t = N1_N0 * self.eta.t
+        c = self.eta.c / N1_N0
         eta = SizeHistory(t=t, c=c)
-        rho_sc = self.rho / 4 / N0 if self.rho is not None else None
+        rho_sc = self.rho / N1_N0 if self.rho is not None else None
         return DemographicModel(theta=mu, rho=rho_sc, eta=eta)
 
     @property

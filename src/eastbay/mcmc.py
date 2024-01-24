@@ -118,6 +118,11 @@ def fit(
     afs, chunks = _init_data(data, window_size, overlap, chunk_size, max_samples)
     # the mutation rate per generation, if known.
     mutation_rate = options.get("mutation_rate")
+    # if we know the true dm, just use its mutation rate
+    if options.get("truth"):
+        if mutation_rate:
+            raise ValueError("mutation rate is already known from truth")
+        mutation_rate = options["truth"].theta
     # if the elpd does not improve for this many iterations, exit the training loop
     elpd_cutoff = options.get("elpd_cutoff", 100)
 
@@ -148,30 +153,29 @@ def fit(
 
     # initialize the model
     init = options.get("init")
+    # watterson's estimator of the mutation rate
+    ch0 = chunks[:, overlap:]
+    watterson = ch0[ch0 > -1].mean() / window_size
+    # although we could work in the per-generation scaling if 'mutation_rate' is passed,
+    # it seems to be numerically better (estimates are more accurate) to work in the
+    # coalescent scaling. perhaps because all the calculations are "O(1)" instead of
+    # "O(huge number) * O(tiny number)" ...
+    N0 = 1.0
+    theta = watterson / 4.0 / N0
+    logger.info("Scaled mutation rate Θ=%f", theta)
     if init is None:
-        ch0 = chunks[:, overlap:]
-        theta = ch0[ch0 > -1].mean()
-        logger.info("Scaled mutation rate Θ=%f", theta)
-        if mutation_rate:
-            # if mutation rate is known then pick t1, tM such that in rescaled time,
-            # t1=10, tM=1e4 generations. (seems like a good default?)
-            N0 = theta / window_size / 4 / mutation_rate
-            t1, tM = (10**x / 2 / N0 for x in [1, 4])
-        else:
-            t1 = 1e-4
-            tM = 15.0
-        # or, the user can override
-        t1 = options.get("t1", t1)
-        tM = options.get("tM", tM)
+        t1 = options.get("t1", 1e-4) * 2 * N0
+        tM = options.get("tM", 15.0) * 2 * N0
+        rho = options.get("rho_over_theta", 1.0) * theta
         init = MCMCParams.from_linear(
             # this pattern is similar to the psmc default, but we have fewer params
             # (16) to use, so are a little more conservative with parameter tying
             pattern="14*1+1*2",
-            rho=options.get("rho_over_theta", 1.0) * theta,
+            rho=rho * window_size,
             t1=t1,
             tM=tM,
-            c=jnp.ones(15),
-            theta=theta,
+            c=jnp.ones(15) / 2.0 / N0,  # this should equal len(Pattern(pattern))
+            theta=theta * window_size,
             alpha=options.get("alpha", 0.0),
         )
     assert isinstance(init, MCMCParams)
@@ -250,10 +254,6 @@ def fit(
         afs=afs,
     )
 
-    # if specified, use the mutation rate for plotting
-    if mutation_rate is None and "truth" in options:
-        mutation_rate = options["truth"].theta
-
     # build the plot callback
     cb = options.get("callback")
     if not cb:
@@ -261,8 +261,7 @@ def fit(
 
     def dms():
         ret = vmap(MCMCParams.to_dm)(state.particles)
-        # the learned rates are per window, so we have to scale up the mutation and
-        # recombination to get the per-base-pair rates.
+        # rates are per window, so we have to scale up to get the per-base-pair rates.
         ret = ret._replace(theta=ret.theta / window_size, rho=ret.rho / window_size)
         if mutation_rate:
             ret = vmap(DemographicModel.rescale, (0, None))(ret, mutation_rate)
@@ -296,9 +295,7 @@ def fit(
                             f"the last {elpd_cutoff} iterations; exiting."
                         )
                         break
-                    pbar.set_description(
-                        f"elpd={ema:.2f} %best={ema/best_elpd[1]:.3f} a={a}"
-                    )
+                    pbar.set_description(f"elpd={ema:.2f} a={a}")
                 cb(dms())
                 if kbi:
                     raise KeyboardInterrupt

@@ -36,7 +36,7 @@ class PSMCParams(NamedTuple):
     def from_dm(cls, dm: eastbay.size_history.DemographicModel) -> "PSMCParams":
         "Initialize parameters from a demographic model"
         assert dm.M == 16, "require M=16"
-        u = dm.theta * dm.eta.ect()
+        u = 2 * dm.theta * dm.eta.ect()
         emis0 = jnp.exp(-u)
         emis1 = -jnp.expm1(-u)
         pi = dm.eta.pi
