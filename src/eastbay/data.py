@@ -158,7 +158,7 @@ class TreeSequenceContig(Contig):
                 assert isinstance(x, tuple)
                 assert len(x) == 2
                 for y in x:
-                    assert isinstance(y, (int, np.integer))
+                    assert isinstance(int(y), int)
         except AssertionError:
             raise ValueError(
                 "Nodes should be a list of tuples (node1, node2) "
@@ -318,7 +318,7 @@ def _read_vcf(
         for variant in vcf(*vcf_iter_args):
             x = variant.POS - start
             pbar.update(x - pbar.n)
-            i = int(x / window_size)
+            i = min(H.shape[1] - 1, int(x / window_size))
             ty = variant.gt_types
             H[:, i] += ty == 1
             # TODO this doesn't handle missing entries correctly
