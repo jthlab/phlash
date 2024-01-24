@@ -1,18 +1,7 @@
-from collections.abc import Callable
-from numbers import Number
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import jax.numpy as jnp
 from jax import vmap
-
-
-class RateFunction(NamedTuple):
-    f: Callable[[float, Any, Any], float]
-
-    def __call__(self, x, diff_params, nondiff_params):
-        return self.f(
-            x,
-        )
 
 
 class JaxPPoly(NamedTuple):
@@ -25,10 +14,8 @@ class JaxPPoly(NamedTuple):
     c: jnp.ndarray
 
     # allow scaling by a constant
-    def __mul__(self, other):
-        if isinstance(other, Number):
-            return self._replace(c=jnp.array(self.c) * other)
-        return NotImplemented
+    def scale(self, x):
+        return self._replace(c=jnp.array(self.c) * x)
 
     def __call__(self, t):
         "Evaluate p(t)"
@@ -86,15 +73,3 @@ class JaxPPoly(NamedTuple):
             ]
         )
         return exp_integrals.sum()
-
-    # def inverse(self):
-    #     """Return the inverse of this function. Only valid for continuous,
-    #     strictly monotone, piecewise linear functions; this assumption is not
-    #     checked.
-    #     """
-    #     assert self.c.shape[0] == 2, self.c.shape
-    #     breaks = self.c[1]  # [0, p(t1), p(t2), ...]
-    #     return TfPoly(
-    #         x=tf.concat([breaks, [np.inf]], axis=0),
-    #         c=tf.concat([1. / self.c[:1], [self.x[:-1]]], axis=0),
-    #     )

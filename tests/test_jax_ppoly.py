@@ -1,11 +1,12 @@
+import jax.numpy as jnp
 import numpy as np
-import pytest
 import scipy
+from pytest import fixture
 
 from eastbay.jax_ppoly import JaxPPoly
 
 
-@pytest.fixture
+@fixture
 def p():
     x = np.r_[0.0, np.cumsum(np.random.rand(10)), np.inf]
     c = np.random.rand(5, 11)
@@ -16,19 +17,19 @@ def _to_spoly(p):
     return scipy.interpolate.PPoly(x=np.array(p.x), c=np.array(p.c))
 
 
-@pytest.fixture
+@fixture
 def q(p):
     return _to_spoly(p)
 
 
-@pytest.fixture
+@fixture
 def pconst():
     x = np.r_[0.0, np.cumsum(np.random.rand(10)), np.inf]
     c = np.random.rand(1, 11)
     return JaxPPoly(x=jnp.array(x), c=jnp.array(c))
 
 
-@pytest.fixture
+@fixture
 def qconst(pconst):
     return _to_spoly(pconst)
 
@@ -52,19 +53,8 @@ def test_exp_integral(pconst, qconst):
 
     for c in 0.01, 1, 10:
         c *= np.random.rand()
-        i1 = pconst.exp_integral(const=c)
+        i1 = pconst.scale(c).exp_integral()
         R = qconst.antiderivative()
         i2, err2 = quad(lambda x: np.exp(-c * R(x)), 0.0, R.x[-2], points=R.x[:-1])
         i3, err3 = quad(lambda x: np.exp(-c * R(x)), R.x[-2], np.inf)
         np.testing.assert_allclose(i1, i2 + i3, atol=err2 + err3)
-
-
-@pytest.mark.xfail
-def test_inverse():
-    R = JaxPPoly(
-        x=np.r_[0.0, np.random.rand(10).cumsum(), np.inf], c=np.random.rand(1, 11)
-    ).antiderivative()
-    Rinv = R.inverse()
-    for t in np.random.rand(10) * 10.0:
-        np.testing.assert_allclose(R(Rinv(t)), t)
-        np.testing.assert_allclose(Rinv(R(t)), t)
