@@ -10,6 +10,7 @@ import scipy
 from jax import vmap
 from scipy.optimize import root_scalar
 
+from eastbay.jax_ppoly import JaxPPoly
 from eastbay.pattern import Pattern
 
 
@@ -110,6 +111,9 @@ class SizeHistory(NamedTuple):
     @property
     def K(self):
         return len(self.c)
+
+    def to_pp(self) -> JaxPPoly:
+        return JaxPPoly(c=jnp.array(self.c)[None], x=jnp.append(self.t, jnp.inf))
 
     @property
     def R(self):
