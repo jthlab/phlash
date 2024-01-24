@@ -233,7 +233,7 @@ def _read_ts(
 
 
 @dataclass(frozen=True)
-class VcfContig:
+class VcfContig(Contig):
     """Read data from a VCF file.
 
     Args:
@@ -489,11 +489,6 @@ def contig(
         except Exception as e:
             raise ValueError(f"Trying to load {src} as a VCF failed") from e
 
-    if region is not None:
-        raise ValueError(
-            "Region string is not supported for tree sequence files. "
-            "Use TreeSequence.keep_intervals() instead."
-        )
     if isinstance(src, tskit.TreeSequence):
         ts = src
     elif src.endswith(".trees") or src.endswith(".ts"):
@@ -508,4 +503,9 @@ def contig(
             raise ValueError(
                 f"Trying to load {src} as a compressed tree sequence failed"
             ) from e
+    if region is not None:
+        raise ValueError(
+            "Region string is not supported for tree sequence files. "
+            "Use TreeSequence.keep_intervals() instead."
+        )
     return TreeSequenceContig(ts, nodes=samples)
