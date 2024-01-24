@@ -1,9 +1,17 @@
 import os
+import os.path
+import tempfile
 
 import msprime
 import numpy as np
+from pytest import fixture
 
 from eastbay.data import TreeSequenceContig, VcfContig, _chunk_het_matrix
+
+
+@fixture
+def sim():
+    return msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
 
 
 def test_chunk(rng):
@@ -28,8 +36,7 @@ def test_vcf():
     assert np.all(d["afs"] == [143, 60, 89])
 
 
-def test_ts():
-    sim = msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
+def test_ts(sim):
     tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)])
     d = tsc.get_data(100)
     assert d["het_matrix"].max() == 3
@@ -37,8 +44,7 @@ def test_ts():
     assert np.all(d["afs"] == [507, 172, 63])
 
 
-def test_ts_mask_missing():
-    sim = msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
+def test_ts_mask_missing(sim):
     tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)])
     d = tsc.get_data(100)
     assert np.all(d["het_matrix"] != -1)
@@ -48,8 +54,28 @@ def test_ts_mask_missing():
     )
 
 
-def test_ts_mask():
-    sim = msprime.simulate(4, length=1e6, mutation_rate=1e-4, random_seed=1)
+def test_ts_mask(sim):
     tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)], mask=[(250, 1000)])
     d = tsc.get_data(100)
     assert np.all(d["het_matrix"][:, 2:10] == -1)
+
+
+def test_equal_ts_vcf(sim):
+    tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)])
+    data_tsc = tsc.get_data(100)
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "tmp.vcf")
+        with open(path, "w") as f:
+            tsc.ts.write_vcf(
+                f, ploidy=2, position_transform=lambda x: (1 + np.array(x)).astype(int)
+            )
+        vcfc = VcfContig(
+            path,
+            samples=["tsk_0", "tsk_1"],
+            contig=None,
+            interval=None,
+            _allow_empty_region=True,
+        )
+        data_vcf = vcfc.get_data(100)
+    for x in ["het_matrix", "afs"]:
+        np.testing.assert_allclose(data_tsc[x], data_vcf[x])

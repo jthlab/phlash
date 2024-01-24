@@ -1,7 +1,7 @@
 import re
 from abc import ABC, abstractmethod
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
 import cyvcf2
@@ -248,6 +248,9 @@ class VcfContig(Contig):
     interval: tuple[int, int]
     samples: list[str]
     mask: list[tuple[int, int]] = None
+    _allow_empty_region: bool = field(
+        repr=False, default=False, metadata=dict(docs=False)
+    )
 
     @property
     def N(self):
@@ -265,13 +268,14 @@ class VcfContig(Contig):
                 "masking is not yet implemented for VCF files, please use vcftools or "
                 "a similar method."
             )
-        if not self.contig:
-            raise ValueError(
-                "contig must be specified. reading in the entire vcf file "
-                "without specifying a contig and region is unsupported."
-            )
-        if self.interval[0] >= self.interval[1]:
-            raise ValueError("region must be an interval (a,b) with a < b")
+        if not self._allow_empty_region:
+            if not self.contig:
+                raise ValueError(
+                    "contig must be specified. reading in the entire vcf file "
+                    "without specifying a contig and region is unsupported."
+                )
+            if self.interval[0] >= self.interval[1]:
+                raise ValueError("region must be an interval (a,b) with a < b")
         if not all(isinstance(s, str) for s in self.samples):
             raise ValueError(
                 "samples should be a list of (string) sample identifiers in the vcf"
@@ -282,29 +286,36 @@ class VcfContig(Contig):
             raise ValueError(f"the following samples were not found in the vcf: {diff}")
 
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
-        return _read_vcf(
-            self.vcf_file, self.contig, *self.interval, self.samples, window_size
-        )
+        args = (self.vcf_file, self.samples, window_size)
+        if not self._allow_empty_region:
+            args += (self.contig, *self.interval)
+        return _read_vcf(*args)
 
 
 @memory.cache
 def _read_vcf(
     vcf_file: str,
-    contig: str,
-    start: int,
-    end: int,
     samples: list[str],
     window_size: int,
+    contig: str = None,
+    start: int = None,
+    end: int = None,
     progress: bool = True,
 ) -> dict[str, np.ndarray]:
     vcf = cyvcf2.VCF(vcf_file, samples=samples, gts012=True)
-    region = f"{contig}:{start}-{end}"
+    if contig and start and end:
+        vcf_iter_args = (f"{contig}:{start}-{end}",)
+    else:
+        vcf_iter_args = ()
+        start = 1
+        assert len(vcf.seqnames) == 1
+        end = vcf.seqlens[0]
     L = end - start + 1
     N = len(samples)
     afs = np.zeros(2 * N + 1, dtype=np.int64)
-    H = np.zeros([N, int(L / window_size + 1)], dtype=np.int8)
+    H = np.zeros([N, int(L / window_size)], dtype=np.int8)
     with tqdm.tqdm(total=L, disable=not progress, desc="Reading VCF") as pbar:
-        for variant in vcf(region):
+        for variant in vcf(*vcf_iter_args):
             x = variant.POS - start
             pbar.update(x - pbar.n)
             i = int(x / window_size)
