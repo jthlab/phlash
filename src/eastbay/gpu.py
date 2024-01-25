@@ -81,6 +81,12 @@ class CudaInitializer:
                 (err,) = cuda.cuInit(0)
                 ASSERT_DRV(err)
                 cls._initialized = True
+                err, device_num = cudart.cudaGetDevice()
+                ASSERT_DRV(err)
+                err, prop = cudart.cudaGetDeviceProperties(device_num)
+                ASSERT_DRV(err)
+                cls.compute_capability = f"{prop.major}{prop.minor}"
+                logger.debug("Compute capability: {}", cls.compute_capability)
 
 
 class _PSMCKernelBase:
@@ -123,13 +129,7 @@ class _PSMCKernelBase:
             src.append("typedef float FLOAT;")
         src.append(KERNEL_SRC)
         src = "\n".join(src)
-        err, device_num = cudart.cudaGetDevice()
-        ASSERT_DRV(err)
-        err, prop = cudart.cudaGetDeviceProperties(device_num)
-        ASSERT_DRV(err)
-        compute_capability = f"{prop.major}{prop.minor}"
-        logger.debug("Compute capability: {}", compute_capability)
-        cubin = _compile(src, compute_capability)
+        cubin = _compile(src, CudaInitializer.compute_capability)
         err, self._mod = cuda.cuModuleLoadData(cubin)
         ASSERT_DRV(err)
         self._f = {}
@@ -259,7 +259,7 @@ class _PSMCKernelBase:
             block = (S, 1, 1)
         (err,) = cuda.cuStreamSynchronize(self._stream)
         ASSERT_DRV(err)
-        logger.debug("launching kernel in thread={}", threading.get_ident())
+        logger.trace("launching kernel in thread={}", threading.get_ident())
         (err,) = cuda.cuLaunchKernel(
             f,
             *grid,
@@ -424,7 +424,7 @@ class PSMCKernel:
             )
             threads.append(thread)
             thread.start()
-            logger.debug("spawned thread {}", thread)
+            logger.trace("spawned thread {}", thread)
 
         for thread in threads:
             thread.join()
