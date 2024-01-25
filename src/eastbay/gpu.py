@@ -15,6 +15,9 @@ from eastbay.log import getLogger
 from eastbay.memory import memory
 from eastbay.params import PSMCParams
 
+(err,) = cuda.cuInit(0)
+ASSERT_DRV(err)
+
 
 class CudaError(RuntimeError):
     def __init__(self, err):
@@ -40,10 +43,6 @@ def ASSERT_DRV(err):
             raise RuntimeError(f"CudaRT Error: {err}")
     else:
         raise RuntimeError(f"Unknown error type: {err}")
-
-
-(err,) = cuda.cuInit(0)
-ASSERT_DRV(err)
 
 
 @memory.cache
