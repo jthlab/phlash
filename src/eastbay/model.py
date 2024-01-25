@@ -4,7 +4,6 @@ from jax import vmap
 from jaxtyping import Array, Float64, Int8, Int64
 
 import eastbay.hmm
-from eastbay.gpu import PSMCKernel
 from eastbay.params import MCMCParams, PSMCParams
 
 
@@ -26,7 +25,7 @@ def log_density(
     c: Float64[Array, "3"],
     inds: Int64[Array, "batch"],
     warmup: Int8[Array, "c ell"],
-    kern: PSMCKernel,
+    kern: "eastbay.gpu.PSMCKernel",
     afs: Int64[Array, "n"],
 ) -> float:
     r"""
