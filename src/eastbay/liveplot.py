@@ -37,7 +37,7 @@ def liveplot_cb(
         if _is_running_in_jupyter():
             f = _IPythonLivePlotDash(truth)  # noqa: F811
     except Exception as e:
-        logger.debug("Live plot init failed: %s", str(e))
+        logger.debug("Live plot init failed: {}", e)
         raise
 
     return f

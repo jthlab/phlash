@@ -160,7 +160,7 @@ def fit(
     # "O(huge number) * O(tiny number)" ...
     N0 = 1.0
     theta = watterson / 4.0 / N0
-    logger.info("Scaled mutation rate Θ=%f", theta)
+    logger.info("Scaled mutation rate Θ={}", theta)
     if init is None:
         t1 = options.get("t1", 1e-4) * 2 * N0
         tM = options.get("tM", 15.0) * 2 * N0

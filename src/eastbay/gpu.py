@@ -128,7 +128,7 @@ class _PSMCKernelBase:
         err, prop = cudart.cudaGetDeviceProperties(device_num)
         ASSERT_DRV(err)
         compute_capability = f"{prop.major}{prop.minor}"
-        logger.debug("Compute capability: %s", compute_capability)
+        logger.debug("Compute capability: {}", compute_capability)
         cubin = _compile(src, compute_capability)
         err, self._mod = cuda.cuModuleLoadData(cubin)
         ASSERT_DRV(err)
@@ -259,7 +259,7 @@ class _PSMCKernelBase:
             block = (S, 1, 1)
         (err,) = cuda.cuStreamSynchronize(self._stream)
         ASSERT_DRV(err)
-        logger.debug("launching kernel in thread=%d", threading.get_ident())
+        logger.debug("launching kernel in thread={}", threading.get_ident())
         (err,) = cuda.cuLaunchKernel(
             f,
             *grid,
@@ -374,7 +374,7 @@ class PSMCKernel:
         if num_gpus is not None:
             assert num_gpus > 0
             n = min(num_gpus, n)
-        logger.info("Using %d GPUs", n)
+        logger.info("Using {} GPUs", n)
         ret = []
         for i in range(n):
             err, cuDevice = cuda.cuDeviceGet(i)
@@ -404,7 +404,7 @@ class PSMCKernel:
         try:
             jax.tree_map(f, pp)
         except Exception:
-            logger.debug("pp:%s", pp)
+            logger.debug("pp:{}", pp)
             raise
         # Split indices array across GPUs
         indices = np.atleast_1d(index)
@@ -424,7 +424,7 @@ class PSMCKernel:
             )
             threads.append(thread)
             thread.start()
-            logger.debug("spawned thread %s", thread)
+            logger.debug("spawned thread {}", thread)
 
         for thread in threads:
             thread.join()

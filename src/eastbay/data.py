@@ -28,7 +28,7 @@ def _trim_het_matrix(het_matrix: np.ndarray):
     a = miss.argmin()
     b = miss[:, a:].argmax()
     ret = het_matrix[:, a : a + b]
-    logger.debug("trimmed het matrix from %s to %s", het_matrix.shape, ret.shape)
+    logger.debug("trimmed het matrix from {} to {}", het_matrix.shape, ret.shape)
     return ret
 
 
