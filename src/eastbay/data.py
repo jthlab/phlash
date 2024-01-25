@@ -11,12 +11,10 @@ import tskit
 import tszip
 from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
+from loguru import logger
 
-from eastbay.log import getLogger
 from eastbay.memory import memory
 from eastbay.size_history import DemographicModel, SizeHistory
-
-logger = getLogger(__name__)
 
 
 class ChunkedContig(NamedTuple):

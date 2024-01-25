@@ -9,11 +9,9 @@ from dash import Dash, dcc, html
 from dash.dependencies import Input, Output
 from dash.exceptions import PreventUpdate
 from jax import jit, vmap
+from loguru import logger
 
-from eastbay.log import getLogger
 from eastbay.size_history import DemographicModel
-
-logger = getLogger(__name__)
 
 
 def _is_running_in_jupyter():

@@ -10,17 +10,15 @@ from jax import numpy as jnp
 from jax import vmap
 from jax.flatten_util import ravel_pytree
 from jaxlib.xla_extension import XlaRuntimeError
+from loguru import logger
 
 import eastbay.hmm
 import eastbay.liveplot
 from eastbay.data import Contig
-from eastbay.log import getLogger
 from eastbay.model import log_density
 from eastbay.params import MCMCParams
 from eastbay.size_history import DemographicModel
 from eastbay.util import tree_unstack
-
-logger = getLogger(__name__)
 
 
 def _init_data(

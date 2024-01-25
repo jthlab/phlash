@@ -9,14 +9,11 @@ import jax.numpy as jnp
 import numpy as np
 from cuda import cuda, cudart, nvrtc
 from jax import custom_vjp, tree_map
+from loguru import logger
 
 import eastbay.size_history
-from eastbay.log import getLogger
 from eastbay.memory import memory
 from eastbay.params import PSMCParams
-
-(err,) = cuda.cuInit(0)
-ASSERT_DRV(err)
 
 
 class CudaError(RuntimeError):
@@ -45,6 +42,10 @@ def ASSERT_DRV(err):
         raise RuntimeError(f"Unknown error type: {err}")
 
 
+(err,) = cuda.cuInit(0)
+ASSERT_DRV(err)
+
+
 @memory.cache
 def _compile(code: str, compute_capability: str) -> bytes:
     err, prog = nvrtc.nvrtcCreateProgram(str.encode(code), b"kern.cu", 0, [], [])
@@ -68,9 +69,6 @@ def _compile(code: str, compute_capability: str) -> bytes:
     (err,) = nvrtc.nvrtcGetCUBIN(prog, data)
     ASSERT_DRV(err)
     return data
-
-
-logger = getLogger(__name__)
 
 
 class _PSMCKernelBase:

@@ -4,18 +4,14 @@ import os
 
 # this needs to occur before jax loads
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-import logging
 import sys
 
 import jax
 
 from eastbay.data import contig
-from eastbay.log import getLogger
 from eastbay.mcmc import fit
 
 jax.config.update("jax_enable_x64", True)
-
-getLogger(__name__).setLevel(logging.INFO)
 
 __all__ = ["fit", "contig"]
 
