@@ -202,8 +202,6 @@ def fit(
     # the warmup chunks and data chunks are analyzed differently; the data chunks load
     # onto the GPU whereas the warmup chunks are processed by native jax.
     warmup_chunks, data_chunks = np.split(chunks, [overlap], axis=1)
-    # construct the GPU kernel, load the data onto it
-
     # defer loading the gpu module until necessary, to keep from having to initialize
     # CUDA on overall package load.
     from eastbay.gpu import PSMCKernel

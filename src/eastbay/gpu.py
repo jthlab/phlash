@@ -42,10 +42,6 @@ def ASSERT_DRV(err):
         raise RuntimeError(f"Unknown error type: {err}")
 
 
-(err,) = cuda.cuInit(0)
-ASSERT_DRV(err)
-
-
 @memory.cache
 def _compile(code: str, compute_capability: str) -> bytes:
     err, prog = nvrtc.nvrtcCreateProgram(str.encode(code), b"kern.cu", 0, [], [])
@@ -71,10 +67,27 @@ def _compile(code: str, compute_capability: str) -> bytes:
     return data
 
 
+class CudaInitializer:
+    """this class defers cuda initialization until runtime. that way, platforms that
+    don't have cuda installed can still load the package."""
+
+    _initialized = False
+    _lock = threading.Lock()
+
+    @classmethod
+    def initialize_cuda(cls):
+        with cls._lock:
+            if not cls._initialized:
+                (err,) = cuda.cuInit(0)
+                ASSERT_DRV(err)
+                cls._initialized = True
+
+
 class _PSMCKernelBase:
     "PSMC kernel running on a single GPU"
 
     def __init__(self, M: int, data: jax.Array, double_precision: bool = False):
+        CudaInitializer.initialize_cuda()
         assert data.ndim == 2
         assert data.dtype == np.int8
         assert data.min() >= -1
@@ -137,13 +150,8 @@ class _PSMCKernelBase:
         # FIXME: I see a weird bug where __del__ is called without initializing cuda.
         # I don't understand how this can happen since it's initialized at the top of
         # the file. everything is surrounded with try/catch blocks to guard against.
-        if hasattr(self, "_mod"):
-            try:
-                (err,) = cuda.cuModuleUnload(self._mod)
-                ASSERT_DRV(err)
-            except CudaError as e:
-                if e.err != 3:
-                    raise
+        (err,) = cuda.cuModuleUnload(self._mod)
+        ASSERT_DRV(err)
         for a in (
             "_data_gpu",
             "_L_max_gpu",
@@ -152,20 +160,11 @@ class _PSMCKernelBase:
             "_ll_gpu",
             "_dlog_gpu",
         ):
-            if hasattr(self, a) and getattr(self, a) is not None:
-                try:
-                    (err,) = cuda.cuMemFree(getattr(self, a))
-                    ASSERT_DRV(err)
-                except CudaError as e:
-                    if e.err != 3:
-                        raise
+            (err,) = cuda.cuMemFree(getattr(self, a))
+            ASSERT_DRV(err)
         if hasattr(self, "_stream"):
-            try:
-                (err,) = cuda.cuStreamDestroy(self._stream)
-                ASSERT_DRV(err)
-            except CudaError as e:
-                if e.err != 3:
-                    raise
+            (err,) = cuda.cuStreamDestroy(self._stream)
+            ASSERT_DRV(err)
 
     @property
     def float_type(self):
@@ -336,6 +335,7 @@ class PSMCKernel:
                 pass
 
         self.kbi_cb = kbi_cb
+        CudaInitializer.initialize_cuda()
         if num_gpus is not None:
             assert num_gpus > 0
         self.double_precision = double_precision
