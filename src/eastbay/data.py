@@ -1,6 +1,7 @@
+"Classes for importing data"
+
 import re
 from abc import ABC, abstractmethod
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
@@ -14,7 +15,6 @@ from jaxtyping import Array, Int, Int8
 from loguru import logger
 
 from eastbay.memory import memory
-from eastbay.size_history import DemographicModel, SizeHistory
 
 
 class ChunkedContig(NamedTuple):
@@ -82,13 +82,14 @@ class Contig(ABC):
         "Length of sequence"
         ...
 
-    def to_basic(self) -> "RawContig":
+    def to_raw(self, window_size: int) -> "RawContig":
         """Convert to a RawContig.
 
         Note:
             This method is useful for pickling a Contig where the get_data()
             step takes a long time to run.
         """
+        return RawContig(**self.get_data(window_size), window_size=window_size)
 
     def to_chunked(
         self, overlap: int, chunk_size: int, window_size: int = 100
@@ -242,9 +243,9 @@ class VcfContig(Contig):
     """
 
     vcf_file: str
+    samples: list[str]
     contig: str
     interval: tuple[int, int]
-    samples: list[str]
     mask: list[tuple[int, int]] = None
     _allow_empty_region: bool = field(
         repr=False, default=False, metadata=dict(docs=False)
@@ -324,123 +325,6 @@ def _read_vcf(
     return dict(het_matrix=H, afs=afs[1:-1])
 
 
-def _find_stdpopsim_model(
-    species_id: str,
-    model_id: str,
-) -> tuple["stdpopsim.Species", "stdpopsim.DemographicModel"]:
-    import stdpopsim
-
-    species = stdpopsim.get_species(species_id)
-    if isinstance(model_id, stdpopsim.DemographicModel):
-        return (species, model_id)
-    for model in species.demographic_models:
-        if model.id == model_id:
-            model = species.get_demographic_model(model.id)
-            return (species, model)
-    if model_id == "Constant":
-        N0 = species.population_size
-        model = stdpopsim.PiecewiseConstantSize(N0)
-        return (species, model)
-    raise ValueError
-
-
-@memory.cache
-def stdpopsim_dataset(
-    species_id: str,
-    model_id: str,
-    population: str | tuple[str, str] = None,
-    n_samples: int = 1,
-    included_contigs: list[str] = None,
-    excluded_contigs: list[str] = ["X", "Mt"],
-    options: dict = {},
-) -> tuple[DemographicModel, list[tskit.TreeSequence]]:
-    r"""Convenience method for simulating data from the stdpopsim catalog.
-
-    Args:
-        model_id: the unique model identifier (e.g., 'Zigzag_1S14')
-        population: the population from which to draw samples
-        n_samples: number of diploid samples to simulate for each contig.
-        excluded_contigs: ids of contigs that should be excluded from simulations
-            (sex/non-recombining chromosomes, mtDNA, etc.)
-
-    Returns:
-        Tuple with two elements. The first element is the "true" demographic model
-        under which the data were simulated. The second element is a chunked data set
-        consisting of all non-excluded diploid chromosomes for the corresponding
-        species.
-    """
-    # keep this import local since most users won't require it. also it generates
-    # annoying warnings on load.
-    import stdpopsim
-
-    try:
-        species, model = _find_stdpopsim_model(species_id, model_id)
-    except ValueError:
-        raise ValueError("could not find a model with id %s" % model_id)
-    if population is None:
-        assert len(model.populations) == 1
-        population = model.populations[0].name
-    if isinstance(population, tuple):
-        assert n_samples % 2 == 0
-        assert len(population) == 2
-        pop_dict = {p: n_samples // 2 for p in population}
-    else:
-        pop_dict = {population: n_samples}
-    pop_dict.update(
-        {pop.name: 0 for pop in model.populations if pop.name not in pop_dict}
-    )
-    mu = species.genome.chromosomes[0].mutation_rate
-    if included_contigs is not None:
-
-        def filt(c):
-            return c.id in included_contigs
-
-    else:
-
-        def filt(c):
-            return c.id not in excluded_contigs
-
-    chroms = [
-        species.get_contig(
-            chrom.id,
-            mutation_rate=mu,
-            length_multiplier=options.get("length_multiplier", 1.0),
-        )
-        for chrom in species.genome.chromosomes
-        if chrom.ploidy == 2 and filt(chrom)
-    ]
-    engine = stdpopsim.get_engine("msprime")
-    ds = []
-    with ProcessPoolExecutor(len(chroms)) as pool:
-        futs = [
-            pool.submit(engine.simulate, model, chrom, pop_dict) for chrom in chroms
-        ]
-        for f in as_completed(futs):
-            ts = f.result()
-            ds.append(
-                TreeSequenceContig(
-                    ts,
-                    # this covers the case where the nodes come one or two populations:
-                    [(i, n_samples + i) for i in range(n_samples)],
-                )
-            )
-
-    # representation of true(simulated) demography
-    md = model.model.debug()
-    t_min = 1e1
-    t_max = max(1e5, md.epochs[-1].start_time + 1)
-    assert np.isinf(md.epochs[-1].end_time)
-    t = np.geomspace(t_min, t_max, 1000)
-    if isinstance(population, str):
-        d = {population: 2}
-    else:
-        d = {p: 1 for p in population}
-    c, _ = md.coalescence_rate_trajectory(t, d)
-    eta = SizeHistory(t=t, c=c)
-    true_dm = DemographicModel(eta=eta, theta=mu, rho=None)
-    return true_dm, ds
-
-
 def contig(
     src: str | tskit.TreeSequence,
     samples: list[str] | list[tuple[int, int]],
@@ -518,3 +402,29 @@ def contig(
             "Use TreeSequence.keep_intervals() instead."
         )
     return TreeSequenceContig(ts, nodes=samples)
+
+
+def subsample_chrom(chrom_path, populations: tuple[int]):
+    # convenience method for the paper analyses
+    ts = tszip.decompress(chrom_path)
+
+    nodes = []
+    nodes = [
+        tuple(ind.nodes)
+        for ind, pop_id in zip(ts.individuals(), ts.individual_populations)
+        if pop_id in populations
+    ]
+    nodes_flat = [x for n in nodes for x in n]
+    assert nodes_flat
+    # not necessary, but cuts down on memory usage and makes the trim step faster
+    ts, m = ts.simplify(samples=nodes_flat, map_nodes=True)
+    new_nodes = [(m[a], m[b]) for a, b in nodes]
+    # the chromosomes are organized into different arms, however the tree sequence spans
+    # the entire chromosome. so there is a big "missing" chunk which will appear as
+    # nonsegregating if we just ignore it.
+    # as a crude hack, just restrict to the interval containing all the sites. this will
+    # throw away a few hundred flanking bps on either side, but in such a large dataset,
+    # the effect is minimal.
+    pos = ts.tables.sites.position
+    ts = ts.keep_intervals([[pos.min(), pos.max()]]).trim()
+    return contig(ts, samples=new_nodes)
