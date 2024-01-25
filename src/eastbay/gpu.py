@@ -141,8 +141,8 @@ class _PSMCKernelBase:
             try:
                 (err,) = cuda.cuModuleUnload(self._mod)
                 ASSERT_DRV(err)
-            except CudaError:
-                if CudaError.err != 3:
+            except CudaError as e:
+                if e.err != 3:
                     raise
         for a in (
             "_data_gpu",
@@ -156,15 +156,15 @@ class _PSMCKernelBase:
                 try:
                     (err,) = cuda.cuMemFree(getattr(self, a))
                     ASSERT_DRV(err)
-                except CudaError:
-                    if CudaError.err != 3:
+                except CudaError as e:
+                    if e.err != 3:
                         raise
         if hasattr(self, "_stream"):
             try:
                 (err,) = cuda.cuStreamDestroy(self._stream)
                 ASSERT_DRV(err)
-            except CudaError:
-                if CudaError.err != 3:
+            except CudaError as e:
+                if e.err != 3:
                     raise
 
     @property
