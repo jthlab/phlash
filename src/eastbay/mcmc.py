@@ -34,7 +34,7 @@ def _init_data(
     chunk_size = int(min(0.2 * ds.L / window_size for ds in data))
     if chunk_size < 10 * overlap:
         logger.warning(
-            "The chunk size is %dbp, which is less than 10 times the overlap (%dbp).",
+            "The chunk size is {}, which is less than 10 times the overlap ({}).",
             chunk_size,
             overlap,
         )
