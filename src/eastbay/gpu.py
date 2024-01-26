@@ -1,5 +1,4 @@
 import ctypes
-import signal
 import threading
 import warnings
 from functools import partial, singledispatchmethod
@@ -150,8 +149,9 @@ class _PSMCKernelBase:
         # FIXME: I see a weird bug where __del__ is called without initializing cuda.
         # I don't understand how this can happen since it's initialized at the top of
         # the file. everything is surrounded with try/catch blocks to guard against.
-        (err,) = cuda.cuModuleUnload(self._mod)
-        ASSERT_DRV(err)
+        if hasattr(self, "_mod"):
+            (err,) = cuda.cuModuleUnload(self._mod)
+            ASSERT_DRV(err)
         for a in (
             "_data_gpu",
             "_L_max_gpu",
@@ -160,8 +160,9 @@ class _PSMCKernelBase:
             "_ll_gpu",
             "_dlog_gpu",
         ):
-            (err,) = cuda.cuMemFree(getattr(self, a))
-            ASSERT_DRV(err)
+            if hasattr(self, a) and getattr(self, a) is not None:
+                (err,) = cuda.cuMemFree(getattr(self, a))
+                ASSERT_DRV(err)
         if hasattr(self, "_stream"):
             (err,) = cuda.cuStreamDestroy(self._stream)
             ASSERT_DRV(err)
@@ -389,9 +390,10 @@ class PSMCKernel:
         # is temporarily disable SIGINT and capture it to a flag. this means that Ctrl-C
         # won't instantly terminate, but usually the GPU kernel returns in <200ms.
         # (See the implementation of psmc_ll, below).
-        s = signal.signal(signal.SIGINT, self.kbi_cb)
+        # FIXME: "signal only works in main thread of main interpreter"
+        # s = signal.signal(signal.SIGINT, self.kbi_cb)
         ret = self._wrapped_call(pp, index, grad)
-        signal.signal(signal.SIGINT, s)
+        # signal.signal(signal.SIGINT, s)
         return ret
 
     def _wrapped_call(
