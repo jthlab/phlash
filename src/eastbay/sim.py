@@ -19,7 +19,7 @@ from eastbay.size_history import DemographicModel, SizeHistory
 
 
 class SimResult(TypedDict):
-    data: list[Contig]
+    data: dict[str, Contig] | dict[str, str]
     truth: DemographicModel
 
 
@@ -27,8 +27,7 @@ class SimResult(TypedDict):
 def stdpopsim_dataset(
     species_id: str,
     model_id: str,
-    population: str | tuple[str, str] = None,
-    n_samples: int = 1,
+    populations: dict[str, int],
     contigs: list[str] = None,
     use_scrm: bool = None,
     seed: int = 1,
@@ -39,10 +38,7 @@ def stdpopsim_dataset(
     Args:
         species_id: the stdpopsim species identifier (e.g., "HomSap")
         model_id: the unique model identifier (e.g., 'Zigzag_1S14')
-        population: the population(s) from which to draw samples. if a tuple of two
-            populations are specified, the returned dataset will contain diploid
-            genomes where one ploid is drawn from each population.
-        n_samples: number of diploid samples to simulate for each contig.
+        populations: the population(s) and sample sizes.
         contigs: ids of contigs that should be simulated. if None, all contigs
             that are diploid; numbered; and have recombination rate >0 are simulated.
         use_scrm: if True, use scrm instead of msprime to simulate data. If None (the
@@ -58,17 +54,10 @@ def stdpopsim_dataset(
         species, model = _find_stdpopsim_model(species_id, model_id)
     except ValueError:
         raise ValueError("could not find a model with id %s" % model_id)
-    if population is None:
-        assert len(model.populations) == 1
-        population = model.populations[0].name
-    if isinstance(population, tuple):
-        assert len(population) == 2
-        pop_dict = {p: n_samples for p in population}
-    else:
-        pop_dict = {population: n_samples}
-    pop_dict.update(
-        {pop.name: 0 for pop in model.populations if pop.name not in pop_dict}
-    )
+    # not necessary but simplifies N0 computation
+    assert len(populations) in [1, 2]
+    pop_dict = {pop.name: 0 for pop in model.populations}
+    pop_dict.update(populations)
     mu = species.genome.chromosomes[0].mutation_rate
     if contigs is not None:
 
@@ -95,29 +84,38 @@ def stdpopsim_dataset(
     for chrom_id, chrom in chroms.items():
         chrom.id = chrom_id
     ds = {}
+    return_vcf = options.get("return_vcf")
     with ProcessPoolExecutor(8) as pool:
         futs = {
-            pool.submit(_simulate, model, chrom, pop_dict, seed, use_scrm): chrom_id
+            pool.submit(
+                _simulate, model, chrom, pop_dict, seed, use_scrm, return_vcf
+            ): chrom_id
             for chrom_id, chrom in chroms.items()
         }
         for f in as_completed(futs):
             chrom_id = futs[f]
             ds[chrom_id] = f.result()
+    true_eta = compute_truth(model, list(populations))
+    true_dm = DemographicModel(eta=true_eta, theta=mu, rho=None)
+    return {"data": ds, "truth": true_dm}
 
-    # representation of true(simulated) demography
+
+def compute_truth(
+    model: stdpopsim.DemographicModel, populations: list[str]
+) -> SizeHistory:
+    "Compute pairwise coalescent rate function for model and populations."
     md = model.model.debug()
     t_min = 1e1
     t_max = max(1e5, md.epochs[-1].start_time + 1)
     assert np.isinf(md.epochs[-1].end_time)
     t = np.geomspace(t_min, t_max, 1000)
-    if isinstance(population, str):
-        d = {population: 2}
+    if len(populations) == 1:
+        d = {p: 2 for p in populations}
     else:
-        d = {p: 1 for p in population}
+        assert len(populations) == 2
+        d = {p: 1 for p in populations}
     c, _ = md.coalescence_rate_trajectory(t, d)
-    eta = SizeHistory(t=t, c=c)
-    true_dm = DemographicModel(eta=eta, theta=mu, rho=None)
-    return {"data": ds, "truth": true_dm}
+    return SizeHistory(t=t, c=c)
 
 
 @memory.cache
@@ -135,6 +133,7 @@ def _simulate(
     pop_dict: dict,
     seed: int,
     use_scrm: bool,
+    return_vcf: bool,
 ) -> Contig:
     active_pops = [p for p, n in pop_dict.items() if n > 0]
     if len(active_pops) == 1:
@@ -148,31 +147,29 @@ def _simulate(
     r = r.item()
     L = chrom.length
     rho = 4 * N0 * r * L
-    if use_scrm or (use_scrm is None and rho > 1e5):
+    if use_scrm or (use_scrm is None and rho > 1e5 and not return_vcf):
         logger.debug(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
-        return _simulate_scrm(model, chrom, pop_dict, N0, seed)
+        return _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf)
     else:
-        return _simulate_msp(model, chrom, pop_dict, seed)
+        return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
 
 
-def _simulate_msp(model, chrom, pop_dict, seed) -> Contig:
+def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
     engine = stdpopsim.get_engine("msprime")
     ts = engine.simulate(model, chrom, pop_dict, seed=seed)
-    ips = ts.individual_populations
-    n = len(ips)
-    if len(pop_dict) == 2:
-        assert len(set(ips[: n // 2])) == len(set(ips[n // 2 :])) == 1
-    else:
-        assert len(set(ips)) == 1
-    # either return all nodes from single population, or zip together
-    # nodes from two populations
-    nodes = [(i, n + i) for i in range(n)]
-    return TreeSequenceContig(ts, nodes)
+    if return_vcf:
+
+        def pt(x):
+            return (1 + np.array(x)).astype(int)
+
+        samples = [f"sample{i}" for i in range(ts.num_individuals)]
+        return ts.as_vcf(individual_names=samples, position_transform=pt)
+    return TreeSequenceContig(ts)
 
 
-def _simulate_scrm(model, chrom, pop_dict, N0, seed) -> Contig:
+def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str:
     scrm = sh.Command(os.environ.get("SCRM_PATH", "scrm"))
     assert chrom.interval_list[0].shape == (1, 2)
     assert chrom.interval_list[0][0, 0] == 0.0
@@ -205,10 +202,10 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed) -> Contig:
         ]
     )
     scrm_out = scrm(sum(samples), 1, *args, _iter=True)
-    return _parse_scrm(scrm_out, chrom.id)
+    return _parse_scrm(scrm_out, chrom.id, return_vcf)
 
 
-def _parse_scrm(scrm_out, chrom_name) -> Contig:
+def _parse_scrm(scrm_out, chrom_name, return_vcf) -> Contig | str:
     "Create a VCF from the scrm output, parse it, and return a raw contig"
     cmd_line = next(scrm_out).strip()
     L = int(re.search(r"-r [\d.]+ (\d+)", cmd_line)[1])
@@ -244,15 +241,13 @@ def _parse_scrm(scrm_out, chrom_name) -> Contig:
             # vcf is 1-based; if a variant has pos=0 it messes up bcftools
             pos = int(1 + float(pos))
             cols = [chrom_name, str(pos), ".", "A", "C", ".", "PASS", ".", "GT"]
-            # zip together one ploid from each population. this covers both cases:
-            # - single population, in which case everything is exchangeable;
-            # - two populations, in which case we take a ploid from each population
             n = len(gts)
             assert n % 2 == 0
-            gtz = zip(gts[: n // 2], gts[n // 2 :])
+            gtz = zip(gts[::2], gts[1::2])
             cols += ["|".join(gt) for gt in gtz]
             print("\t".join(cols), file=vcf)
-
+    if return_vcf:
+        return open(vcf_path).read()
     return VcfContig(
         vcf_path, samples, contig=None, interval=None, _allow_empty_region=True
     ).to_raw(100)
