@@ -50,7 +50,7 @@ def _init_data(
                 window_size=window_size,
             )
             futs[fut] = ds.size
-        with tqdm.tqdm(total=total_size) as pbar:
+        with tqdm.tqdm(total=total_size, unit_scale=True) as pbar:
             for f in as_completed(futs):
                 size = futs[f]
                 if size:
