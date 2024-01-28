@@ -105,7 +105,13 @@ class _PSMCKernelBase:
         self._N, self._L = data.shape
         # copy the data onto the gpu once and for all
         err, self._data_gpu = cuda.cuMemAlloc(data.nbytes)
-        ASSERT_DRV(err)
+        try:
+            ASSERT_DRV(err)
+        except CudaError as e:
+            logger.debug(f"{data.shape=}")
+            raise MemoryError(
+                f"While trying to allocate {data.nbytes} bytes on GPU"
+            ) from e
         (err,) = cuda.cuMemcpyHtoD(self._data_gpu, data, data.nbytes)
         ASSERT_DRV(err)
         a = data[:, ::-1] == -1
