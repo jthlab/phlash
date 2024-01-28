@@ -269,6 +269,8 @@ class VcfContig(Contig):
     @property
     def L(self):
         "Length of sequence"
+        if self.interval is None:
+            return None
         return self.interval[1] - self.interval[0]
 
     def __post_init__(self):
