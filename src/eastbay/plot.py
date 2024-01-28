@@ -15,7 +15,7 @@ def plot_posterior(dms: list[DemographicModel], ax: "matplotlib.axes.Axes" = Non
     t = jnp.geomspace(t1, tM, 1000)
     Ne = vmap(SizeHistory.__call__, (0, None, None))(dms.eta, t, True)
     q025, m, q975 = jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
-    ax.plot(t, m, color="tab:blue")
-    ax.fill_between(t, q025, q975, color="tab:blue", alpha=0.1)
+    ax.plot(t, m)
+    ax.fill_between(t, q025, q975, alpha=0.1)
     for d in "top", "right":
         ax.spines[d].set_visible(False)
