@@ -145,19 +145,25 @@ class TreeSequenceContig(Contig):
     Args:
         ts: tree sequence
         nodes: list of (node1, node2) pairs to include. Each pair corresponds to a
-            diploid genome.
+            diploid genome. If None, include all individuals in the tree sequence.
         mask: list of intervals (a, b). All positions within these intervals are
             ignored.
     """
 
     ts: tskit.TreeSequence
-    nodes: list[tuple[int, int]]
+    nodes: list[tuple[int, int]] = None
     mask: list[tuple[int, int]] = None
+
+    @property
+    def _nodes(self):
+        if self.nodes is not None:
+            return self.nodes
+        return [tuple(i.nodes) for i in self.ts.individuals()]
 
     def __post_init__(self):
         try:
-            assert isinstance(self.nodes, list)
-            for x in self.nodes:
+            assert isinstance(self._nodes, list)
+            for x in self._nodes:
                 assert isinstance(x, tuple)
                 assert len(x) == 2
                 for y in x:
@@ -172,7 +178,7 @@ class TreeSequenceContig(Contig):
     @property
     def N(self):
         "Number of ploids in this dataset."
-        return 2 * len(self.nodes)
+        return 2 * len(self._nodes)
 
     @property
     def L(self):
@@ -194,11 +200,11 @@ class TreeSequenceContig(Contig):
             bp = np.append(bp, self.L)
         mid = (bp[:-1] + bp[1:]) / 2.0
         unmasked = [bool(tr[m]) for m in mid]
-        nodes_flat = [x for t in self.nodes for x in t]
+        nodes_flat = [x for t in self._nodes for x in t]
         afs = self.ts.allele_frequency_spectrum(
             sample_sets=[nodes_flat], windows=bp, polarised=True, span_normalise=False
         )[unmasked].sum(0)[1:-1]
-        het_matrix = _read_ts(self.ts, self.nodes, window_size)
+        het_matrix = _read_ts(self.ts, self._nodes, window_size)
         # now mask out columns of the het matrix based on interval
         # overlap
         tr = IntervalTree.from_tuples(mask)
