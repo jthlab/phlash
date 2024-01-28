@@ -23,7 +23,6 @@ class SimResult(TypedDict):
     truth: DemographicModel
 
 
-@memory.cache
 def stdpopsim_dataset(
     species_id: str,
     model_id: str,
@@ -147,7 +146,7 @@ def _simulate(
     r = r.item()
     L = chrom.length
     rho = 4 * N0 * r * L
-    if use_scrm or (use_scrm is None and rho > 1e5 and not return_vcf):
+    if use_scrm or (use_scrm is None and rho > 1e5 and return_vcf is not False):
         logger.debug(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
@@ -165,7 +164,9 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
             return (1 + np.array(x)).astype(int)
 
         samples = [f"sample{i}" for i in range(ts.num_individuals)]
-        return ts.as_vcf(individual_names=samples, position_transform=pt)
+        return ts.as_vcf(
+            individual_names=samples, position_transform=pt, contig_id=chrom.id
+        )
     return TreeSequenceContig(ts)
 
 
