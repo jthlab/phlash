@@ -82,6 +82,10 @@ class Contig(ABC):
         "Length of sequence"
         ...
 
+    @property
+    def size(self):
+        return self.L * self.N
+
     def to_raw(self, window_size: int) -> "RawContig":
         """Convert to a RawContig.
 
@@ -212,7 +216,7 @@ def _read_ts(
     ts: tskit.TreeSequence,
     nodes: list[tuple[int, int]],
     window_size: int,
-    progress: bool = True,
+    progress: bool = False,
 ) -> np.ndarray:
     nodes_flat = [x for t in nodes for x in t]
     N = len(nodes)
@@ -299,7 +303,7 @@ def _read_vcf(
     contig: str = None,
     start: int = None,
     end: int = None,
-    progress: bool = True,
+    progress: bool = False,
 ) -> dict[str, np.ndarray]:
     vcf = cyvcf2.VCF(vcf_file, samples=samples, gts012=True)
     if contig and start and end:

@@ -39,23 +39,27 @@ def _init_data(
             overlap,
         )
     chunks = []
+    total_size = sum(ds.size for ds in data if ds.size)
     with ProcessPoolExecutor() as pool:
-        futs = []
+        futs = {}
         for ds in data:
-            futs.append(
-                pool.submit(
-                    ds.to_chunked,
-                    overlap=overlap,
-                    chunk_size=chunk_size,
-                    window_size=window_size,
-                )
+            fut = pool.submit(
+                ds.to_chunked,
+                overlap=overlap,
+                chunk_size=chunk_size,
+                window_size=window_size,
             )
-        for f in as_completed(futs):
-            d = f.result()
-            if d.afs is not None:
-                afss.append(d.afs)
-            if d.chunks is not None:
-                chunks.append(d.chunks)
+            futs[fut] = ds.size
+        with tqdm.tqdm(total=total_size) as pbar:
+            for f in as_completed(futs):
+                size = futs[f]
+                if size:
+                    pbar.update(size)
+                d = f.result()
+                if d.afs is not None:
+                    afss.append(d.afs)
+                if d.chunks is not None:
+                    chunks.append(d.chunks)
 
     assert all(a.ndim == 1 for a in afss)
     assert len({a.shape for a in afss}) == 1
