@@ -133,15 +133,24 @@ def fit(
     # a big improvement. For now it's capped at 5.
     S = options.get("minibatch_size")
     if not S:
-        S = max(1, min(10, int(len(chunks) / niter)))
+        S = max(1, min(5, int(len(chunks) / niter)))
+    logger.debug("Minibatch size: {}", S)
 
     # avoid storing a huge array on gpu if we're only going to use a small part of it
-    if len(chunks) > 10 * S * niter:
+    # in expectation, we will sample at most S * niter rows of the data.
+    if len(chunks) > 5 * S * niter:
         key, subkey = jax.random.split(key)
         # important: use numpy to do this _not_ jax. (jax will put it on the gpu which
         # causes the very problem we are trying to solve.)
+        old_size = chunks.size
         chunks = np.random.default_rng(np.asarray(subkey)).choice(
-            chunks, size=(10 * S * niter,), replace=False
+            chunks, size=(5 * S * niter,), replace=False
+        )
+        gb = 1024**3
+        logger.debug(
+            "Downsampled chunks from {:.2f}Gb to {:.2f}Gb",
+            old_size / gb,
+            chunks.size / gb,
         )
     N = len(chunks)
 
