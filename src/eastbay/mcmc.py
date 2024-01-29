@@ -50,7 +50,7 @@ def _init_data(
                 window_size=window_size,
             )
             futs[fut] = ds.size
-        with tqdm.tqdm(total=total_size, unit_scale=True) as pbar:
+        with tqdm.tqdm(total=total_size, unit="bp", unit_scale=True) as pbar:
             for f in as_completed(futs):
                 size = futs[f]
                 if size:
@@ -173,7 +173,7 @@ def fit(
     # "O(huge number) * O(tiny number)" ...
     N0 = 1.0
     theta = watterson / 4.0 / N0
-    logger.info("Scaled mutation rate Θ={:.4f}", theta)
+    logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
         t1 = options.get("t1", 1e-4) * 2 * N0
         tM = options.get("tM", 15.0) * 2 * N0
