@@ -9,7 +9,6 @@ from jax import grad, jit
 from jax import numpy as jnp
 from jax import vmap
 from jax.flatten_util import ravel_pytree
-from jaxlib.xla_extension import XlaRuntimeError
 from loguru import logger
 
 import eastbay.hmm
@@ -154,14 +153,6 @@ def fit(
         )
     N = len(chunks)
 
-    # keyboard interrupt handler and callback. This is used inside the gpu code in case
-    # ctrl-c was caught while the gpu kernel was executing.
-    kbi = False
-
-    def kbi_cb(*args):
-        nonlocal kbi
-        kbi = True
-
     # initialize the model
     init = options.get("init")
     # watterson's estimator of the mutation rate
@@ -223,7 +214,6 @@ def fit(
         M=M,
         data=np.ascontiguousarray(data_chunks),
         double_precision=options.get("double_precision", False),
-        kbi_cb=kbi_cb,
     )
 
     # if there is a test set, define elpd() function for computing expected
@@ -237,7 +227,6 @@ def fit(
             M=M,
             data=np.ascontiguousarray(d["het_matrix"]),
             double_precision=False,
-            kbi_cb=kbi_cb,
         )
 
         @jit
@@ -276,49 +265,35 @@ def fit(
             ret = vmap(DemographicModel.rescale, (0, None))(ret, mutation_rate)
         return ret
 
-    try:
-        ema = best_elpd = None
-        a = 0
-        with tqdm.trange(
-            niter, disable=not options.get("progress", True), desc="Fitting model"
-        ) as pbar:
-            for i in pbar:
-                key, subkey = jax.random.split(key, 2)
-                inds = kw["inds"] = jax.random.choice(subkey, N, shape=(S,))
-                kw["warmup"] = warmup_chunks[inds]
-                state = step(state, **kw)
-                if test_data is not None and i % 10 == 0:
-                    e = elpd(state.particles)
-                    if ema is None:
-                        ema = e
-                    else:
-                        ema = 0.9 * ema + 0.1 * e
-                    if best_elpd is None or ema > best_elpd[1]:
-                        a = 0
-                        best_elpd = (i, ema, state)
-                    else:
-                        a += 1
-                    if i - best_elpd[0] > elpd_cutoff:
-                        logger.info(
-                            "The expected log-predictive density has not improved in "
-                            f"the last {elpd_cutoff} iterations; exiting."
-                        )
-                        break
-                    pbar.set_description(f"elpd={ema:.2f} a={a}")
-                cb(dms())
-                if kbi:
-                    raise KeyboardInterrupt
-
-    except (KeyboardInterrupt, XlaRuntimeError) as e:
-        if isinstance(e, XlaRuntimeError):
-            # this might be due to keyboard interrupt while we were inside the gpu
-            # callback. unfortunately, the jax exception appears to just contain a big
-            # string and is not more structured, so there is no better way to check for
-            # KeyboardException than grepping the error message.
-            (msg,) = e.args
-            if not msg.find("CpuCallback error: KeyboardInterrupt"):
-                raise
-        logger.warning("Caught Ctrl-C; returning current estimates")
+    ema = best_elpd = None
+    a = 0
+    with tqdm.trange(
+        niter, disable=not options.get("progress", True), desc="Fitting model"
+    ) as pbar:
+        for i in pbar:
+            key, subkey = jax.random.split(key, 2)
+            inds = kw["inds"] = jax.random.choice(subkey, N, shape=(S,))
+            kw["warmup"] = warmup_chunks[inds]
+            state = step(state, **kw)
+            if test_data is not None and i % 10 == 0:
+                e = elpd(state.particles)
+                if ema is None:
+                    ema = e
+                else:
+                    ema = 0.9 * ema + 0.1 * e
+                if best_elpd is None or ema > best_elpd[1]:
+                    a = 0
+                    best_elpd = (i, ema, state)
+                else:
+                    a += 1
+                if i - best_elpd[0] > elpd_cutoff:
+                    logger.info(
+                        "The expected log-predictive density has not improved in "
+                        f"the last {elpd_cutoff} iterations; exiting."
+                    )
+                    break
+                pbar.set_description(f"elpd={ema:.2f} a={a}")
+            cb(dms())
 
     # notify the live plot that we are done. fails if we are not using liveplot.
     try:

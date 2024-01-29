@@ -330,18 +330,9 @@ class PSMCKernel:
         - data: data matrix.
         - double_precision: if True, use float64 on the GPU. (generally not worth it in
             my experience.)
-        - kbi_cb: a keyboard interrupt callback, see __call__().
     """
 
-    def __init__(
-        self, M, data, double_precision=False, num_gpus: int = None, kbi_cb=None
-    ):
-        if kbi_cb is None:
-
-            def kbi_cb(*args):
-                pass
-
-        self.kbi_cb = kbi_cb
+    def __init__(self, M, data, double_precision=False, num_gpus: int = None):
         CudaInitializer.initialize_cuda()
         if num_gpus is not None:
             assert num_gpus > 0
@@ -389,23 +380,9 @@ class PSMCKernel:
             ret.append(cuDevice)
         return ret
 
-    def __call__(self, pp: PSMCParams, index: int, grad: bool):
-        # the purpose of this function is to gracefully handle Ctrl-C when jax is inside
-        # of the GPU callback. with no special handling, Jax (really XLA I think) will
-        # emit a horrifying series of logs and stack traces and die. Instead, what we do
-        # is temporarily disable SIGINT and capture it to a flag. this means that Ctrl-C
-        # won't instantly terminate, but usually the GPU kernel returns in <200ms.
-        # (See the implementation of psmc_ll, below).
-        # FIXME: "signal only works in main thread of main interpreter"
-        # s = signal.signal(signal.SIGINT, self.kbi_cb)
-        ret = self._wrapped_call(pp, index, grad)
-        # signal.signal(signal.SIGINT, s)
-        return ret
-
-    def _wrapped_call(
+    def __call__(
         self, pp: PSMCParams, index: int, grad: bool
     ) -> tuple[float, PSMCParams]:
-        # this is call is wrapped in a special SIGINT handler, see above
         def f(a):
             assert np.isfinite(a).all()
 
