@@ -84,6 +84,8 @@ class Contig(ABC):
 
     @property
     def size(self):
+        if self.L is None or self.N is None:
+            return None
         return self.L * self.N
 
     def to_raw(self, window_size: int) -> "RawContig":

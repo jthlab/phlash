@@ -30,7 +30,10 @@ def _init_data(
     """Chunk up the data. If chunk_size is missing, set it to ~1/5th of the shortest
     contig. (This may not be optimal)."""
     afss = []
-    chunk_size = int(min(0.2 * ds.L / window_size for ds in data))
+    # this has to succeed, we can't have all the het matrices empty
+    if all(ds.L is None for ds in data):
+        raise ValueError("None of the contigs have a length")
+    chunk_size = int(min(0.2 * ds.L / window_size for ds in data if ds.L))
     if chunk_size < 10 * overlap:
         logger.warning(
             "The chunk size is {}, which is less than 10 times the overlap ({}).",
