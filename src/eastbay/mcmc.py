@@ -129,6 +129,8 @@ def fit(
         mutation_rate = options["truth"].theta
     # if the elpd does not improve for this many iterations, exit the training loop
     elpd_cutoff = options.get("elpd_cutoff", 100)
+    # If true, use the folded afs for inference
+    fold_afs = options.get("fold_afs", True)
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -243,6 +245,7 @@ def fit(
                     kern=test_kern,
                     warmup=jnp.full([N_test, 1], -1, dtype=jnp.int8),
                     afs=test_afs,
+                    fold_afs=fold_afs,
                 )
 
             return jax.scipy.special.logsumexp(ll(mcps)).mean()
@@ -253,6 +256,7 @@ def fit(
         kern=train_kern,
         c=jnp.array([1.0, N / S, 1.0]),
         afs=afs,
+        fold_afs=fold_afs,
     )
 
     # build the plot callback

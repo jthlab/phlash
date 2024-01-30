@@ -5,8 +5,7 @@ import numpy as np
 import pytest
 from csmp.transition import transition_matrix, transition_probs
 
-from eastbay.common import DemographicModel, PSMCParams
-from eastbay.model import PSMCParLoglik, matvec_smc, psmc_ll
+from eastbay.model import _fold_afs
 
 
 def test_par_ll(dm, data):
@@ -65,3 +64,14 @@ def test_speed(rng, dm, benchmark, double):
     ll, _ = jf(dm, inds)
     ll.block_until_ready()
     benchmark(jf, dm, inds)
+
+
+def test_fold():
+    for x, y in [
+        ([], []),
+        ([1], [1]),
+        ([1, 2], [3]),
+        (np.arange(5), [4, 4, 2]),
+        (np.arange(6), [5, 5, 5]),
+    ]:
+        np.testing.assert_allclose(_fold_afs(x), y)
