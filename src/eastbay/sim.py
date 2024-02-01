@@ -150,9 +150,11 @@ def _simulate(
         logger.debug(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
-        return _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf)
-    else:
-        return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
+        try:
+            return _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf)
+        except Exception as e:
+            logger.debug('Running scrm failed: {}', e)
+    return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
 
 
 def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:

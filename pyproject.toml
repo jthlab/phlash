@@ -15,6 +15,7 @@ dependencies = [
     "jax_dataclasses",
     "jaxlib",
     "joblib",
+    "loguru",
     "matplotlib>3",
     "msprime",
     "numpy>1.20",
