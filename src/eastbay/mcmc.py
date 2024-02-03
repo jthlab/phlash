@@ -11,8 +11,6 @@ from jax import vmap
 from jax.flatten_util import ravel_pytree
 from loguru import logger
 
-import eastbay.hmm
-import eastbay.liveplot
 from eastbay.data import Contig
 from eastbay.model import log_density
 from eastbay.params import MCMCParams
@@ -262,7 +260,14 @@ def fit(
     # build the plot callback
     cb = options.get("callback")
     if not cb:
-        cb = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
+        try:
+            import eastbay.liveplot
+
+            cb = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
+        except ImportError:
+            # if necessary libraries aren't installed, just initialize a dummy callback
+            def cb(*a, **kw):
+                pass
 
     def dms():
         ret = vmap(MCMCParams.to_dm)(state.particles)
