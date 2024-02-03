@@ -1,10 +1,11 @@
 "Tools to check performance on simulated data"
 
+import io
 import os.path
 import re
 import shlex
+import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from tempfile import TemporaryDirectory
 from typing import TypedDict
 
 import demes
@@ -205,10 +206,20 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str
         ]
     )
     scrm_out = scrm(sum(samples), 1, *args, _iter=True)
-    return _parse_scrm(scrm_out, chrom.id, return_vcf)
+    vcf = _parse_scrm(scrm_out, chrom.id)
+    if return_vcf:
+        return vcf
+    fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
+    with os.fdopen(fd, "wt") as f:
+        f.write(vcf)
+    n = sum(samples) // 2
+    samples = [f"sample{i}" for i in range(n)]
+    return VcfContig(
+        vcf_path, samples, contig=None, interval=None, _allow_empty_region=True
+    ).to_raw(100)
 
 
-def _parse_scrm(scrm_out, chrom_name, return_vcf) -> Contig | str:
+def _parse_scrm(scrm_out, chrom_name) -> str:
     "Create a VCF from the scrm output, parse it, and return a raw contig"
     cmd_line = next(scrm_out).strip()
     L = int(re.search(r"-r [\d.]+ (\d+)", cmd_line)[1])
@@ -218,9 +229,6 @@ def _parse_scrm(scrm_out, chrom_name, return_vcf) -> Contig | str:
     ploids = int(scrm_cmds[1])
     assert ploids % 2 == 0
     n = ploids // 2
-
-    tmpdir = TemporaryDirectory()
-    vcf_path = os.path.join(tmpdir.name, "tmp.vcf")
     header = [
         "##fileformat=VCFv4.0",
         """##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">""",
@@ -233,27 +241,23 @@ def _parse_scrm(scrm_out, chrom_name, return_vcf) -> Contig | str:
     while not next(scrm_out).startswith("position"):
         continue
     # if there are two populations then we will combine haplotypes from each
-    with open(vcf_path, "w") as vcf:
-        print("\n".join(header), file=vcf)
-        for line in scrm_out:
-            if line.startswith("SFS: "):
-                #     with open(snakemake.output[1], 'wt') as sfs:
-                #         sfs.write(line[5:])
-                continue
-            pos, _, *gts = line.strip().split(" ")
-            # vcf is 1-based; if a variant has pos=0 it messes up bcftools
-            pos = int(1 + float(pos))
-            cols = [chrom_name, str(pos), ".", "A", "C", ".", "PASS", ".", "GT"]
-            n = len(gts)
-            assert n % 2 == 0
-            gtz = zip(gts[::2], gts[1::2])
-            cols += ["|".join(gt) for gt in gtz]
-            print("\t".join(cols), file=vcf)
-    if return_vcf:
-        return open(vcf_path).read()
-    return VcfContig(
-        vcf_path, samples, contig=None, interval=None, _allow_empty_region=True
-    ).to_raw(100)
+    vcf = io.StringIO()
+    print("\n".join(header), file=vcf)
+    for line in scrm_out:
+        if line.startswith("SFS: "):
+            #     with open(snakemake.output[1], 'wt') as sfs:
+            #         sfs.write(line[5:])
+            continue
+        pos, _, *gts = line.strip().split(" ")
+        # vcf is 1-based; if a variant has pos=0 it messes up bcftools
+        pos = int(1 + float(pos))
+        cols = [chrom_name, str(pos), ".", "A", "C", ".", "PASS", ".", "GT"]
+        n = len(gts)
+        assert n % 2 == 0
+        gtz = zip(gts[::2], gts[1::2])
+        cols += ["|".join(gt) for gt in gtz]
+        print("\t".join(cols), file=vcf)
+    return vcf.getvalue()
 
 
 def _find_stdpopsim_model(
