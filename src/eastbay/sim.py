@@ -85,7 +85,7 @@ def stdpopsim_dataset(
         chrom.id = chrom_id
     ds = {}
     return_vcf = options.get("return_vcf")
-    with ProcessPoolExecutor(8) as pool:
+    with ProcessPoolExecutor(options.get("num_threads")) as pool:
         futs = {
             pool.submit(
                 _simulate, model, chrom, pop_dict, seed, use_scrm, return_vcf
