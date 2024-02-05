@@ -4,7 +4,8 @@ import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objs as go
 import plotly.io._renderers
-from IPython.display import Javascript, display, get_ipython
+from IPython import get_ipython
+from IPython.display import Javascript, display
 from jax import jit, vmap
 from loguru import logger
 
