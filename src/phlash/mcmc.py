@@ -11,11 +11,11 @@ from jax import vmap
 from jax.flatten_util import ravel_pytree
 from loguru import logger
 
-from eastbay.data import Contig
-from eastbay.model import log_density
-from eastbay.params import MCMCParams
-from eastbay.size_history import DemographicModel
-from eastbay.util import tree_unstack
+from phlash.data import Contig
+from phlash.model import log_density
+from phlash.params import MCMCParams
+from phlash.size_history import DemographicModel
+from phlash.util import tree_unstack
 
 
 def _init_data(
@@ -211,7 +211,7 @@ def fit(
     warmup_chunks, data_chunks = np.split(chunks, [overlap], axis=1)
     # defer loading the gpu module until necessary, to keep from having to initialize
     # CUDA on overall package load.
-    from eastbay.gpu import PSMCKernel
+    from phlash.gpu import PSMCKernel
 
     train_kern = PSMCKernel(
         M=M,
@@ -261,9 +261,9 @@ def fit(
     cb = options.get("callback")
     if not cb:
         try:
-            import eastbay.liveplot
+            from phlash.liveplot import liveplot_cb
 
-            cb = eastbay.liveplot.liveplot_cb(truth=options.get("truth"))
+            cb = liveplot_cb(truth=options.get("truth"))
         except ImportError:
             # if necessary libraries aren't installed, just initialize a dummy callback
             def cb(*a, **kw):

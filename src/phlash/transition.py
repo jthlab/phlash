@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 
-from eastbay.size_history import DemographicModel
+from phlash.size_history import DemographicModel
 
 
 def _expQ(r, c, n):

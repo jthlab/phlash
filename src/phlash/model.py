@@ -3,8 +3,8 @@ import jax.numpy as jnp
 from jax import vmap
 from jaxtyping import Array, Float64, Int8, Int64
 
-import eastbay.hmm
-from eastbay.params import MCMCParams, PSMCParams
+import phlash.hmm
+from phlash.params import MCMCParams, PSMCParams
 
 
 def _fold_afs(afs):
@@ -34,7 +34,7 @@ def log_density(
     c: Float64[Array, "3"],
     inds: Int64[Array, "batch"],
     warmup: Int8[Array, "c ell"],
-    kern: "eastbay.gpu.PSMCKernel",
+    kern: "phlash.gpu.PSMCKernel",
     afs: Int64[Array, "n"],
     fold_afs: bool,
 ) -> float:
@@ -57,7 +57,7 @@ def log_density(
     """
     dm = mcp.to_dm()
     pp = PSMCParams.from_dm(dm)
-    pis = vmap(lambda pp, d: eastbay.hmm.psmc_ll(pp, d)[0], (None, 0))(
+    pis = vmap(lambda pp, d: phlash.hmm.psmc_ll(pp, d)[0], (None, 0))(
         pp, warmup
     )  # (I, M)
     pps = vmap(lambda pi: pp._replace(pi=pi))(pis)

@@ -6,8 +6,8 @@ import jax.numpy as jnp
 from jax import lax
 from jaxtyping import Array, Int8
 
-from eastbay.params import PSMCParams
-from eastbay.size_history import DemographicModel
+from phlash.params import PSMCParams
+from phlash.size_history import DemographicModel
 
 
 def _assert_leaf_shape(pytree, sh):

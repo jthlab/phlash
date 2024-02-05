@@ -1,5 +1,5 @@
 [project]
-name = "eastbay"
+name = "phlash"
 version = "0.1.0"
 description = "Add a short description here!"
 authors = [
@@ -48,6 +48,6 @@ testing = [
 
 [tool.isort]
 profile = "black"
-known_first_party = "eastbay"
+known_first_party = "phlash"
 
 [tool.setuptools_scm]

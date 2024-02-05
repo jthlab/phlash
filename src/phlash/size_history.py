@@ -10,8 +10,8 @@ import scipy
 from jax import vmap
 from scipy.optimize import root_scalar
 
-from eastbay.jax_ppoly import JaxPPoly
-from eastbay.pattern import Pattern
+from phlash.jax_ppoly import JaxPPoly
+from phlash.pattern import Pattern
 
 
 def _expm1inv(x):

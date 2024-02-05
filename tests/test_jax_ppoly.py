@@ -3,7 +3,7 @@ import numpy as np
 import scipy
 from pytest import fixture
 
-from eastbay.jax_ppoly import JaxPPoly
+from phlash.jax_ppoly import JaxPPoly
 
 
 @fixture

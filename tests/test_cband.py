@@ -1,6 +1,6 @@
 import numpy as np
 
-from eastbay.cband import _find_confidence_bands
+from phlash.cband import _find_confidence_bands
 
 
 def test_random_sampled_functions(rng):

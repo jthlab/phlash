@@ -2,9 +2,9 @@ import jax
 import numpy as np
 from pytest import fixture
 
-from eastbay.gpu import PSMCKernel
-from eastbay.params import PSMCParams
-from eastbay.size_history import DemographicModel
+from phlash.gpu import PSMCKernel
+from phlash.params import PSMCParams
+from phlash.size_history import DemographicModel
 
 jax.config.update("jax_enable_x64", True)
 

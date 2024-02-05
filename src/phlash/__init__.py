@@ -8,8 +8,8 @@ import sys
 
 import jax
 
-from eastbay.data import contig
-from eastbay.mcmc import fit
+from phlash.data import contig
+from phlash.mcmc import fit
 
 jax.config.update("jax_enable_x64", True)
 

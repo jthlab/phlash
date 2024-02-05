@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.linalg import expm
 
-from eastbay.transition import _expQ, transition_matrix
+from phlash.transition import _expQ, transition_matrix
 
 
 def _Q(r, c, n):

@@ -6,7 +6,7 @@ import msprime
 import numpy as np
 from pytest import fixture
 
-from eastbay.data import TreeSequenceContig, VcfContig, _chunk_het_matrix
+from phlash.data import TreeSequenceContig, VcfContig, _chunk_het_matrix
 
 
 @fixture

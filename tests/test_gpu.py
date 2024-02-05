@@ -5,8 +5,8 @@ import jax.test_util
 import numpy as np
 from pytest import fixture
 
-from eastbay.gpu import PSMCKernel
-from eastbay.params import PSMCParams
+from phlash.gpu import PSMCKernel
+from phlash.params import PSMCParams
 
 
 @fixture(params=[None, 1])

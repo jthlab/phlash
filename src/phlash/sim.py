@@ -14,9 +14,9 @@ import sh
 import stdpopsim
 from loguru import logger
 
-from eastbay.data import Contig, TreeSequenceContig, VcfContig
-from eastbay.memory import memory
-from eastbay.size_history import DemographicModel, SizeHistory
+from phlash.data import Contig, TreeSequenceContig, VcfContig
+from phlash.memory import memory
+from phlash.size_history import DemographicModel, SizeHistory
 
 
 class SimResult(TypedDict):
@@ -154,7 +154,7 @@ def _simulate(
         try:
             return _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf)
         except Exception as e:
-            logger.debug('Running scrm failed: {}', e)
+            logger.debug("Running scrm failed: {}", e)
     return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
 
 

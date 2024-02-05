@@ -1,8 +1,8 @@
 import jax.numpy as jnp
 from jax import vmap
 
-from eastbay.size_history import DemographicModel, SizeHistory
-from eastbay.util import tree_stack
+from phlash.size_history import DemographicModel, SizeHistory
+from phlash.util import tree_stack
 
 
 def plot_posterior(dms: list[DemographicModel], ax: "matplotlib.axes.Axes" = None):

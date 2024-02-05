@@ -6,9 +6,9 @@ import jax.numpy as jnp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 
-import eastbay.size_history
-import eastbay.transition
-from eastbay.pattern import Pattern
+import phlash.size_history
+import phlash.transition
+from phlash.pattern import Pattern
 
 
 def softplus_inv(y):
@@ -33,14 +33,14 @@ class PSMCParams(NamedTuple):
         return M
 
     @classmethod
-    def from_dm(cls, dm: eastbay.size_history.DemographicModel) -> "PSMCParams":
+    def from_dm(cls, dm: phlash.size_history.DemographicModel) -> "PSMCParams":
         "Initialize parameters from a demographic model"
         assert dm.M == 16, "require M=16"
         u = 2 * dm.theta * dm.eta.ect()
         emis0 = jnp.exp(-u)
         emis1 = -jnp.expm1(-u)
         pi = dm.eta.pi
-        A = eastbay.transition.transition_matrix(dm)
+        A = phlash.transition.transition_matrix(dm)
         emis0, emis1, pi, A = jax.tree_map(
             lambda a: a.clip(1e-20, 1.0 - 1e-20), (emis0, emis1, pi, A)
         )
@@ -89,16 +89,16 @@ class MCMCParams:
             alpha=alpha,
         )
 
-    def to_dm(self) -> eastbay.size_history.DemographicModel:
+    def to_dm(self) -> phlash.size_history.DemographicModel:
         pat = Pattern(self.pattern)
         assert len(pat) == len(self.c)
         t1, dtM = self.t
         tM = t1 + dtM
         t = jnp.insert(jnp.geomspace(t1, tM, pat.M - 1), 0, 0.0)
         c = jnp.array(pat.expand(self.c))
-        eta = eastbay.size_history.SizeHistory(t=t, c=c)
+        eta = phlash.size_history.SizeHistory(t=t, c=c)
         assert eta.t.shape == eta.c.shape
-        return eastbay.size_history.DemographicModel(
+        return phlash.size_history.DemographicModel(
             eta=eta, theta=self.theta, rho=self.rho
         )
 

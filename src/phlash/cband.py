@@ -1,8 +1,8 @@
 import numpy as np
 from jax import vmap
 
-from eastbay.size_history import SizeHistory
-from eastbay.util import tree_stack
+from phlash.size_history import SizeHistory
+from phlash.util import tree_stack
 
 
 def confidence_band(

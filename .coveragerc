@@ -1,7 +1,7 @@
 # .coveragerc to control coverage.py
 [run]
 branch = True
-source = eastbay
+source = phlash
 # omit = bad_file.py
 
 [paths]

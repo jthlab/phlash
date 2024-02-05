@@ -4,7 +4,7 @@ import scipy
 from pytest import fixture
 from scipy.integrate import quad
 
-from eastbay.size_history import SizeHistory, _expm1inv, _W_matrix
+from phlash.size_history import SizeHistory, _expm1inv, _W_matrix
 
 
 def test_pi():

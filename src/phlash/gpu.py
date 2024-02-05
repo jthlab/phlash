@@ -10,9 +10,9 @@ from cuda import cuda, cudart, nvrtc
 from jax import custom_vjp, tree_map
 from loguru import logger
 
-import eastbay.size_history
-from eastbay.memory import memory
-from eastbay.params import PSMCParams
+import phlash.size_history
+from phlash.memory import memory
+from phlash.params import PSMCParams
 
 
 class CudaError(RuntimeError):
@@ -360,7 +360,7 @@ class PSMCKernel:
 
     # convenience overload mostly to help test code
     @loglik.register
-    def _(self, dm: eastbay.size_history.DemographicModel, index):
+    def _(self, dm: phlash.size_history.DemographicModel, index):
         return self.loglik(PSMCParams.from_dm(dm), index)
 
     def _initialize_devices(self, num_gpus: int):

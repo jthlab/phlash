@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from csmp.transition import transition_matrix, transition_probs
 
-from eastbay.model import _fold_afs
+from phlash.model import _fold_afs
 
 
 def test_par_ll(dm, data):

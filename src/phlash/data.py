@@ -14,7 +14,7 @@ from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
 
-from eastbay.memory import memory
+from phlash.memory import memory
 
 
 class ChunkedContig(NamedTuple):

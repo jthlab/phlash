@@ -1,7 +1,7 @@
 import numpy as np
 
-import eastbay.data
-import eastbay.mcmc
+import phlash.data
+import phlash.mcmc
 
 
 def test_sp(rng):
@@ -11,7 +11,7 @@ def test_sp(rng):
 
 
 def test_functional1():
-    truth, chd = eastbay.data.stdpopsim_dataset(
+    truth, chd = phlash.data.stdpopsim_dataset(
         "SouthMiddleAtlas_1D17", "SouthMiddleAtlas"
     )
-    eastbay.mcmc.fit(chd, options=dict(niter=5))
+    phlash.mcmc.fit(chd, options=dict(niter=5))

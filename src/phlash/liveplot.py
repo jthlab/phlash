@@ -8,7 +8,7 @@ from IPython.display import Javascript, display, get_ipython
 from jax import jit, vmap
 from loguru import logger
 
-from eastbay.size_history import DemographicModel
+from phlash.size_history import DemographicModel
 
 _js_update = """
 window.updatePhlashPlot = function(x, m, q025, q975, hasTruth) {
