@@ -55,9 +55,9 @@ repos:
 - repo: https://github.com/PyCQA/flake8
   rev: 6.1.0
   hooks:
-  - id: flake8
   ## You can add flake8 plugins via `additional_dependencies`:
-  #  additional_dependencies: [flake8-bugbear]
+  - id: flake8
+    additional_dependencies: [Flake8-pyproject]
 
 ## Check for misspells in documentation files:
 # - repo: https://github.com/codespell-project/codespell

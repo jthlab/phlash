@@ -60,3 +60,13 @@ deps =
 commands =
     pytest tests/ --import-mode importlib
 """
+
+[tool.flake8]
+# Some sane defaults for the code style checker flake8
+max_line_length = 88
+extend_ignore = ['E203', 'W503', 'F722', 'F821']
+# ^  Black-compatible
+#    E203 and W503 have edge cases handled by black
+exclude = ['.tox', 'build', 'dist', '.eggs', 'docs/conf.py']
+# some environment variables need to be set before loading jax
+per-file-ignores = ['src/phlash/__init__.py:E402']
