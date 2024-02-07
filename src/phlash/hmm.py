@@ -10,13 +10,6 @@ from phlash.params import PSMCParams
 from phlash.size_history import DemographicModel
 
 
-def _assert_leaf_shape(pytree, sh):
-    def f(a):
-        assert a.shape == sh
-
-    jax.tree_map(f, pytree)
-
-
 def matvec_smc(v, pp: PSMCParams):
     # v @ A where A is the SMC' transition matrix.
     vr = lax.associative_scan(operator.add, jnp.append(v, 0.0)[1:], reverse=True)
