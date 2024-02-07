@@ -670,7 +670,6 @@ loglik_grad(int8_t const *datag,
         __syncthreads();
         if (g == 0) {
             h[m] /= c;
-            h[m] = max(1e-6, min(1. - 1e-6, h[m]));
         }
         for (j = 0; j < M; ++j) {
             LOG_X(m, j) *= p_emis(ob, p, j) / c;

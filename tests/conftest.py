@@ -25,10 +25,10 @@ def dm():
 
 
 @fixture
-def kern(data):
-    return PSMCKernel(M=16, data=data, double_precision=True)
+def pp(dm) -> PSMCParams:
+    return PSMCParams.from_dm(dm)
 
 
 @fixture
-def pp(dm) -> PSMCParams:
-    return PSMCParams.from_dm(dm)
+def kern(data):
+    return PSMCKernel(M=16, data=data, double_precision=True)
