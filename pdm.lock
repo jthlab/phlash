@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:2fe247a37b0b7be45455df7804c11ec645c410f539c7a0d759ab2c555955cfa4"
+content_hash = "sha256:03b618e982686315749aa699fca6c4af785d3608a0c861719f8814031fa1bbbc"
 
 [[package]]
 name = "absl-py"
@@ -1282,17 +1282,6 @@ marker = "python_version >= \"3.12\""
 files = [
     {file = "setuptools-69.0.3-py3-none-any.whl", hash = "sha256:385eb4edd9c9d5c17540511303e39a147ce2fc04bc55289c322b9e5904fe2c05"},
     {file = "setuptools-69.0.3.tar.gz", hash = "sha256:be1af57fc409f93647f2e8e4573a142ed38724b8cdd389706a867bb4efcf1e78"},
-]
-
-[[package]]
-name = "sh"
-version = "2.0.6"
-requires_python = ">=3.8.1,<4.0"
-summary = "Python subprocess replacement"
-groups = ["default"]
-files = [
-    {file = "sh-2.0.6-py3-none-any.whl", hash = "sha256:ced8f2e081a858b66a46ace3703dec243779abbd5a1887ba7e3c34f34da70cd2"},
-    {file = "sh-2.0.6.tar.gz", hash = "sha256:9b2998f313f201c777e2c0061f0b1367497097ef13388595be147e2a00bf7ba1"},
 ]
 
 [[package]]

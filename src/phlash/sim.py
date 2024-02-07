@@ -4,13 +4,13 @@ import io
 import os.path
 import re
 import shlex
+import subprocess
 import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import TypedDict
 
 import demes
 import numpy as np
-import sh
 import stdpopsim
 from loguru import logger
 
@@ -174,7 +174,6 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
 
 
 def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str:
-    scrm = sh.Command(os.environ.get("SCRM_PATH", "scrm"))
     assert chrom.interval_list[0].shape == (1, 2)
     assert chrom.interval_list[0][0, 0] == 0.0
     L = chrom.interval_list[0][0, 1]
@@ -205,8 +204,12 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str
             seed,
         ]
     )
-    scrm_out = scrm(sum(samples), 1, *args, _iter=True)
-    vcf = _parse_scrm(scrm_out, chrom.id)
+    scrm = os.environ.get("SCRM_PATH", "scrm")
+    cmd = [scrm, sum(samples), 1] + args
+    with subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True
+    ) as proc:
+        vcf = _parse_scrm(proc, chrom.id)
     if return_vcf:
         return vcf
     fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
