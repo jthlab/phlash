@@ -207,9 +207,13 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str
     scrm = os.environ.get("SCRM_PATH", "scrm")
     cmd = [scrm, sum(samples), 1] + args
     with subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, text=True, bufsize=1, universal_newlines=True
+        list(map(str, cmd)),
+        stdout=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+        universal_newlines=True,
     ) as proc:
-        vcf = _parse_scrm(proc, chrom.id)
+        vcf = _parse_scrm(proc.stdout, chrom.id)
     if return_vcf:
         return vcf
     fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
