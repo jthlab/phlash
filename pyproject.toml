@@ -1,6 +1,6 @@
 [project]
 name = "phlash"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Bayesian inference of population history from recombining sequence data."
 authors = [
     {name = "Jonathan Terhorst", email = "jonth@umich.edu"},
@@ -31,8 +31,12 @@ requires-python = ">=3.10,<4.0"
 readme = "README.md"
 license = {text = "MIT"}
 
+[build-system]
+requires = ["setuptools>=64", "setuptools_scm>=8","wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.pdm]
-distribution = false
+distribution = true
 
 [tool.pdm.build]
 includes = []
@@ -69,3 +73,5 @@ extend_ignore = ['E203', 'W503', 'F722', 'F821']
 exclude = ['.tox', 'build', 'dist', '.eggs', 'docs/conf.py']
 # some environment variables need to be set before loading jax
 per-file-ignores = ['src/phlash/__init__.py:E402']
+
+[tool.setuptools_scm]
