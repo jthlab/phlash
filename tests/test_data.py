@@ -29,7 +29,12 @@ def test_chunk(rng):
 
 def test_vcf():
     fn = os.path.join(os.path.dirname(__file__), "fixtures", "sample.bcf")
-    vcf = VcfContig(fn, "1", (25_000_000, 26_000_000), ["NA12878", "NA12889"])
+    vcf = VcfContig(
+        fn,
+        contig="1",
+        interval=(25_000_000, 26_000_000),
+        samples=["NA12878", "NA12889"],
+    )
     d = vcf.get_data(100)
     assert d["het_matrix"].max() == 2
     assert d["het_matrix"].sum() == 256
