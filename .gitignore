@@ -53,3 +53,4 @@ MANIFEST
 .conda*/
 .python-version
 .ipynb_checkpoints
+.pdm-python
