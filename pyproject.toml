@@ -10,7 +10,7 @@ dependencies = [
     "cuda-python<13,>=12",
     "cyvcf2<1.0.0,>=0.30.28",
     "intervaltree<4.0.0,>=3.1.0",
-    "jax[cuda12_pip]>=0.4.23",
+    "jax>=0.4.23",
     "joblib<2.0.0,>=1.3.2",
     "loguru<1.0.0,>=0.7.2",
     "matplotlib<4.0.0,>=3.8.2",
@@ -30,6 +30,9 @@ dependencies = [
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
 license = {text = "MIT"}
+
+[project.optional-dependencies]
+jaxgpu = ["jax[cuda12_pip]>=0.4.23"]
 
 [build-system]
 requires = ["setuptools>=64", "setuptools_scm>=8","wheel"]
