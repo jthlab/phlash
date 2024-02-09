@@ -4,6 +4,8 @@ import os
 
 # this needs to occur before jax loads
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+jax.config.update("jax_enable_x64", True)
 import sys
 
 import jax
@@ -12,7 +14,6 @@ from loguru import logger
 from phlash.data import contig
 from phlash.mcmc import fit
 
-jax.config.update("jax_enable_x64", True)
 if jax.local_devices()[0].platform != "gpu":
     logger.warning(
         "Detected that Jax is not running on GPU; you appear to have "

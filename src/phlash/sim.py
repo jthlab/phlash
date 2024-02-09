@@ -6,7 +6,7 @@ import re
 import shlex
 import subprocess
 import tempfile
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from typing import TypedDict
 
 import demes
@@ -16,6 +16,7 @@ from loguru import logger
 
 from phlash.data import Contig, TreeSequenceContig, VcfContig
 from phlash.memory import memory
+from phlash.mp import JaxCpuProcessPoolExecutor
 from phlash.size_history import DemographicModel, SizeHistory
 
 
@@ -85,7 +86,7 @@ def stdpopsim_dataset(
         chrom.id = chrom_id
     ds = {}
     return_vcf = options.get("return_vcf")
-    with ProcessPoolExecutor(options.get("num_threads")) as pool:
+    with JaxCpuProcessPoolExecutor(max_workers=options.get("num_threads")) as pool:
         futs = {
             pool.submit(
                 _simulate, model, chrom, pop_dict, seed, use_scrm, return_vcf

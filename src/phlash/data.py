@@ -2,6 +2,7 @@
 
 import re
 from abc import ABC, abstractmethod
+from concurrent.futures import as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
@@ -15,6 +16,7 @@ from jaxtyping import Array, Int, Int8
 from loguru import logger
 
 from phlash.memory import memory
+from phlash.mp import JaxCpuProcessPoolExecutor
 
 
 class ChunkedContig(NamedTuple):
@@ -442,3 +444,54 @@ def subsample_chrom(chrom_path, populations: tuple[int]):
     pos = ts.tables.sites.position
     ts = ts.keep_intervals([[pos.min(), pos.max()]]).trim()
     return contig(ts, samples=new_nodes)
+
+
+def init_mcmc_data(
+    data: list[Contig],
+    window_size: int,
+    overlap: int,
+    chunk_size: int = None,
+    max_samples: int = 20,
+):
+    """Chunk up the data. If chunk_size is missing, set it to ~1/5th of the shortest
+    contig. (This may not be optimal)."""
+    afss = []
+    # this has to succeed, we can't have all the het matrices empty
+    if all(ds.L is None for ds in data):
+        raise ValueError("None of the contigs have a length")
+    chunk_size = int(min(0.2 * ds.L / window_size for ds in data if ds.L))
+    if chunk_size < 10 * overlap:
+        logger.warning(
+            "The chunk size is {}, which is less than 10 times the overlap ({}).",
+            chunk_size,
+            overlap,
+        )
+    chunks = []
+    total_size = sum(ds.size for ds in data if ds.size)
+    with JaxCpuProcessPoolExecutor() as pool:
+        futs = {}
+        for ds in data:
+            fut = pool.submit(
+                ds.to_chunked,
+                overlap=overlap,
+                chunk_size=chunk_size,
+                window_size=window_size,
+            )
+            futs[fut] = ds.size
+        with tqdm.tqdm(total=total_size, unit="bp", unit_scale=True) as pbar:
+            for f in as_completed(futs):
+                size = futs[f]
+                if size:
+                    pbar.update(size)
+                d = f.result()
+                if d.afs is not None:
+                    afss.append(d.afs)
+                if d.chunks is not None:
+                    chunks.append(d.chunks)
+
+    assert all(a.ndim == 1 for a in afss)
+    assert len({a.shape for a in afss}) == 1
+    # all afs have same dimension
+    assert len({ch.shape[-1] for ch in chunks}) == 1
+    assert all(ch.ndim == 2 for ch in chunks)
+    return np.sum(afss, 0), np.concatenate(chunks, 0)

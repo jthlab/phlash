@@ -1,5 +1,3 @@
-from concurrent.futures import ProcessPoolExecutor, as_completed
-
 import blackjax
 import jax
 import numpy as np
@@ -11,62 +9,11 @@ from jax import vmap
 from jax.flatten_util import ravel_pytree
 from loguru import logger
 
-from phlash.data import Contig
+from phlash.data import Contig, init_mcmc_data
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
 from phlash.util import tree_unstack
-
-
-def _init_data(
-    data: list[Contig],
-    window_size: int,
-    overlap: int,
-    chunk_size: int = None,
-    max_samples: int = 20,
-):
-    """Chunk up the data. If chunk_size is missing, set it to ~1/5th of the shortest
-    contig. (This may not be optimal)."""
-    afss = []
-    # this has to succeed, we can't have all the het matrices empty
-    if all(ds.L is None for ds in data):
-        raise ValueError("None of the contigs have a length")
-    chunk_size = int(min(0.2 * ds.L / window_size for ds in data if ds.L))
-    if chunk_size < 10 * overlap:
-        logger.warning(
-            "The chunk size is {}, which is less than 10 times the overlap ({}).",
-            chunk_size,
-            overlap,
-        )
-    chunks = []
-    total_size = sum(ds.size for ds in data if ds.size)
-    with ProcessPoolExecutor() as pool:
-        futs = {}
-        for ds in data:
-            fut = pool.submit(
-                ds.to_chunked,
-                overlap=overlap,
-                chunk_size=chunk_size,
-                window_size=window_size,
-            )
-            futs[fut] = ds.size
-        with tqdm.tqdm(total=total_size, unit="bp", unit_scale=True) as pbar:
-            for f in as_completed(futs):
-                size = futs[f]
-                if size:
-                    pbar.update(size)
-                d = f.result()
-                if d.afs is not None:
-                    afss.append(d.afs)
-                if d.chunks is not None:
-                    chunks.append(d.chunks)
-
-    assert all(a.ndim == 1 for a in afss)
-    assert len({a.shape for a in afss}) == 1
-    # all afs have same dimension
-    assert len({ch.shape[-1] for ch in chunks}) == 1
-    assert all(ch.ndim == 2 for ch in chunks)
-    return np.sum(afss, 0), np.concatenate(chunks, 0)
 
 
 def fit(
@@ -117,7 +64,7 @@ def fit(
     # the size of each "chunk", see manuscript. this is estimated from data.
     chunk_size = options.get("chunk_size")
     max_samples = options.get("max_samples", 20)
-    afs, chunks = _init_data(data, window_size, overlap, chunk_size, max_samples)
+    afs, chunks = init_mcmc_data(data, window_size, overlap, chunk_size, max_samples)
     # the mutation rate per generation, if known.
     mutation_rate = options.get("mutation_rate")
     # if we know the true dm, just use its mutation rate
