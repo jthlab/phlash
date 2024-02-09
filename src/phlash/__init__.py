@@ -1,14 +1,19 @@
 "Bayesian inference of ancestral size history."
 
 import os
+import warnings
+
+# ignore some annoying warnings that show up in the packages we rely on
+warnings.filterwarnings(action="ignore", module="stdpopsim", category=FutureWarning)
 
 # this needs to occur before jax loads
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-jax.config.update("jax_enable_x64", True)
 import sys
 
 import jax
+
+jax.config.update("jax_enable_x64", True)
 from loguru import logger
 
 from phlash.data import contig
