@@ -66,6 +66,7 @@ class MCMCParams:
     log_rho: float
     theta: jdc.Static[float]
     alpha: jdc.Static[float]
+    beta: jdc.Static[float]
 
     @classmethod
     def from_linear(
@@ -76,17 +77,19 @@ class MCMCParams:
         c: jax.Array,
         theta: float,
         rho: float,
-        alpha: float,
+        alpha: float = 0.0,
+        beta: float = 1e-4,
     ) -> "MCMCParams":
         dtM = tM - t1
         assert len(Pattern(pattern)) == len(c)  # one c per epoch
         return cls(
             pattern=pattern,
-            c_tr=softplus_inv(c),
+            c_tr=jnp.log(c),
             t_tr=jnp.log(jnp.array([t1, dtM])),
             theta=theta,
             log_rho=jnp.log(rho),
             alpha=alpha,
+            beta=beta,
         )
 
     def to_dm(self) -> phlash.size_history.DemographicModel:
@@ -116,4 +119,8 @@ class MCMCParams:
 
     @property
     def c(self):
-        return jax.nn.softplus(self.c_tr)
+        return jnp.exp(self.c_tr)
+
+    @property
+    def log_c(self):
+        return self.c_tr
