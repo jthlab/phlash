@@ -8,7 +8,7 @@ from jaxtyping import Array, Float
 
 import phlash.size_history
 import phlash.transition
-from phlash.pattern import Pattern
+from phlash.util import Pattern
 
 
 def softplus_inv(y):

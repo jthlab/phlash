@@ -11,7 +11,7 @@ from jax import vmap
 from scipy.optimize import root_scalar
 
 from phlash.jax_ppoly import JaxPPoly
-from phlash.pattern import Pattern
+from phlash.util import Pattern
 
 
 def _expm1inv(x):
