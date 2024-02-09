@@ -5,7 +5,7 @@
 groups = ["default"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:ff102010fa02eb3d72f5f264fa053b89cb3a5aecd4d5395e483a57efb9704817"
+content_hash = "sha256:62f4095e503bdc9fa44a4ed4b3e5083de81a5a13a35b3b1daddabe603b2d9d95"
 
 [[package]]
 name = "absl-py"
@@ -393,6 +393,15 @@ dependencies = [
     "scipy>=1.9",
 ]
 files = [
+    {file = "jaxlib-0.4.24+cuda11.cudnn86-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:96e2942c4895d6dfec3ba79c903c5d7494e23856b476d25e0e5aefa7e5989879"},
+    {file = "jaxlib-0.4.24+cuda11.cudnn86-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:e3eb89f088fa9851849a3144822ddf2e748b66cfafd7c051a0eb7b999baac9dc"},
+    {file = "jaxlib-0.4.24+cuda11.cudnn86-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:6d40c56fde00affeb94b3cd1f512c8b3f48bfc776368f4f54aee708668e44b4d"},
+    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:159e5da6797c4ff9ac6d7c7c8c64bba1338856200a9bb4a25a2d8b2da5c004f1"},
+    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:4028eb39ccc3da6a7e083c155c1734ff8ac99c08b3795eb600ad03a71f57e931"},
+    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:7bfe74895a947a46bd3aa571abeab1612eb23e3d6c47ba71254e8b265ccbedf2"},
+    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:229cb7be4d72529969373102005b7adda3888601168171bb864a1e4c893d6d04"},
+    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:8e5b361a497eb9665b3a94cdecb454862b70e803fb8f158a0187091b81f2ddaf"},
+    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:2d29d91da5206bff19eb988a5d6067643938c94a4dca4153bb7bee9027213ba4"},
     {file = "jaxlib-0.4.24-cp310-cp310-macosx_10_14_x86_64.whl", hash = "sha256:be1c942f0fb3069cf55048b6b6a80131013363d6ba601804220e80e0f3e1ddb4"},
     {file = "jaxlib-0.4.24-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:2e02023b20c6b6cf38d12410261fb238ca1b30049beb6965bc98e91af873ad2c"},
     {file = "jaxlib-0.4.24-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:0bcabf20b7004b3c0e0072904bced64bb15590d898d9dfa8b2f1d82c7fbacf9b"},
@@ -639,7 +648,7 @@ files = [
 
 [[package]]
 name = "msprime"
-version = "1.3.0"
+version = "1.3.1"
 requires_python = ">=3.8"
 summary = "Simulate genealogical trees and genomic sequence data using population genetic models"
 groups = ["default"]
@@ -650,11 +659,11 @@ dependencies = [
     "tskit>=0.5.2",
 ]
 files = [
-    {file = "msprime-1.3.0-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:2395266e2b36de1e380b61730cfd1cf896a99bc277cb30c006aa8fac69a86532"},
-    {file = "msprime-1.3.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c3709afd1dae58c2f3a3981c58b9e38b054770c484ef51a668bf8bbd997e64ef"},
-    {file = "msprime-1.3.0-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:8e9e4b66016ea645d2fe8589d2c089331f2d9a790346cde118c9cd099c1643eb"},
-    {file = "msprime-1.3.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ff5ec57a5e6aa3c57e777fb2cb2156a2c94dbb91b7716be7b88df02ccdaa9a23"},
-    {file = "msprime-1.3.0.tar.gz", hash = "sha256:7988c61ef9495c367e82efc9fb9d8023c3db2a207a6445d4391953af3c426c29"},
+    {file = "msprime-1.3.1-cp310-cp310-macosx_11_0_x86_64.whl", hash = "sha256:c380541937fcf1245ce9ebd83fefaf23b7323b2b46d61d34ac2a0835248467ea"},
+    {file = "msprime-1.3.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f4c6c1a37431fa1ac3989ab5a1fdc94b4df537e5f9e2ab7cb66a55e4bd6185ae"},
+    {file = "msprime-1.3.1-cp311-cp311-macosx_10_9_universal2.whl", hash = "sha256:72fb1bd4c3e85c9c7758c445e338149cb0436244bf61982054df37d11155ca60"},
+    {file = "msprime-1.3.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6b0f8e5acf2451b4f1f43c87786cfc25c61321b17a4f769233147d75d4091c76"},
+    {file = "msprime-1.3.1.tar.gz", hash = "sha256:b3f62cd516ad2e43c8412ea1f242acad1bc939391cfe9caa19625874e2e34835"},
 ]
 
 [[package]]
