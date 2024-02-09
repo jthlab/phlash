@@ -5,15 +5,7 @@ from jaxtyping import Array, Float64, Int8, Int64
 
 import phlash.hmm
 from phlash.params import MCMCParams, PSMCParams
-
-
-def _fold_afs(afs):
-    afs = jnp.array(afs)
-    n = len(afs)
-    if n % 2 == 1:
-        m = n // 2
-        return jnp.append(_fold_afs(jnp.delete(afs, m)), afs[m])
-    return afs[: n // 2] + afs[-1 : -1 - n // 2 : -1]
+from phlash.util import fold_afs
 
 
 def log_prior(mcp: MCMCParams) -> float:
@@ -36,7 +28,7 @@ def log_density(
     warmup: Int8[Array, "c ell"],
     kern: "phlash.gpu.PSMCKernel",
     afs: Int64[Array, "n"],
-    fold_afs: bool,
+    use_folded_afs: bool,
 ) -> float:
     r"""
     Computes the log density of a statistical model by combining the contributions from
@@ -50,7 +42,7 @@ def log_density(
         data: Data matrix used in the model computation.
         kern: An instantiated PSMC Kernel used in the computation.
         afs: The allele frequency spectrum data.
-        fold_afs: Whether to fold the afs, if ancestral allele is not known.
+        use_folded_afs: Whether to fold the afs, if ancestral allele is not known.
 
     Returns:
         The log density, or negative infinity where the result is not finite.
@@ -67,9 +59,9 @@ def log_density(
         n = len(afs) + 1
         etbl = dm.eta.etbl(n)
         esfs = etbl / etbl.sum()
-        f_afs, f_esfs = map(_fold_afs, (afs, esfs))
+        f_afs, f_esfs = map(fold_afs, (afs, esfs))
         l3 = jnp.where(
-            fold_afs,
+            use_folded_afs,
             jax.scipy.special.xlogy(f_afs, f_esfs).sum(),
             jax.scipy.special.xlogy(afs, esfs).sum(),
         )

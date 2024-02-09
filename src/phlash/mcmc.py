@@ -243,7 +243,7 @@ def fit(
                     kern=test_kern,
                     warmup=jnp.full([N_test, 1], -1, dtype=jnp.int8),
                     afs=test_afs,
-                    fold_afs=fold_afs,
+                    use_folded_afs=fold_afs,
                 )
 
             return jax.scipy.special.logsumexp(ll(mcps)).mean()
@@ -254,7 +254,7 @@ def fit(
         kern=train_kern,
         c=jnp.array([1.0, N / S, 1.0]),
         afs=afs,
-        fold_afs=fold_afs,
+        use_folded_afs=fold_afs,
     )
 
     # build the plot callback
