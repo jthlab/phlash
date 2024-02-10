@@ -7,7 +7,8 @@ import jax.numpy as jnp
 import msprime
 import numpy as np
 import scipy
-from jax import vmap
+from jax import jit, vmap
+from scipy.integrate import quad
 from scipy.optimize import root_scalar
 
 from phlash.jax_ppoly import JaxPPoly
@@ -143,11 +144,10 @@ class SizeHistory(NamedTuple):
         return self.c[i]
         # return self.to_pp()(x)
 
-    @property
-    def dens(self, c: float = 1.0) -> Callable[[float], float]:
+    def density(self, c: float = 1.0) -> Callable[[float], float]:
         R = self.R
         f = self.to_pp()
-        return lambda x: f(x) * np.exp(-c * R(x))
+        return lambda x: f(x) * jnp.exp(-c * R(x))
 
     @property
     def sf(self) -> Callable[[float], float]:
@@ -217,6 +217,34 @@ class SizeHistory(NamedTuple):
         W = _W_matrix(n)
         return W @ self.etjj(n)
 
+    def tv(self, other: "SizeHistory", n: int = 2) -> float:
+        "Total variation distance between coalescent densities"
+        f1 = self
+        f2 = other
+        R1 = f1.R
+        R2 = f2.R
+        c = n * (n - 1) / 2
+
+        def g(x):
+            return _tv_helper(x, f1, R1, f2, R2, c)
+
+        p = sorted(set(self.t) | set(other.t))
+        assert p[0] == 0.0
+        I1, err1 = quad(g, 0.0, p[-1], points=p[1:-1])
+        I2, err2 = quad(g, p[-1], np.inf)
+        return 0.5 * (I1 + I2)
+
+    def l2(self, other: "SizeHistory", t_max) -> float:
+        "L2 distance between N_self(t) and N_other(t) up to time t_max."
+        t = np.array([sorted(set(self.t) | set(other.t) | {t_max})])
+        t = t[t <= t_max]
+        # both Ne functions will be constant on the unioned intervals, so we can call
+        # them at the interval midpoint to get the correct value
+        tmid = (t[:-1] + t[1:]) / 2.0
+        Ne1, Ne2 = (f(tmid, Ne=True) for f in (self, other))
+        s = (Ne1 - Ne2) ** 2 * jnp.diff(t)
+        return jnp.sqrt(s.sum())
+
     @classmethod
     def from_demography(cls, demo: msprime.Demography) -> "SizeHistory":
         """Instantiate size history from an msprime demography.
@@ -239,6 +267,11 @@ class SizeHistory(NamedTuple):
         Ne = dbg.population_size_trajectory(steps=t).squeeze()
         i = np.insert(Ne[1:] != Ne[:-1], 0, True)
         return cls(t=t[i], c=1 / (2 * Ne[i]))
+
+
+@jit
+def _tv_helper(x, f1, R1, f2, R2, c):
+    return c / 2 * abs(f1(x) * jnp.exp(-c * R1(x)) - f2(x) * jnp.exp(-c * R2(x)))
 
 
 def _psmc_size_history(pattern, alpha, t_max) -> SizeHistory:

@@ -50,7 +50,27 @@ def test_mean1():
 
 
 def test_W():
-    _W_matrix(10)
+    n = 10
+    W = _W_matrix(n)
+    eta = SizeHistory(t=np.array([0.0, np.inf]), c=np.ones(1))
+    etjj = eta.etjj(n)
+    v = W @ etjj
+    np.testing.assert_allclose(v, 2 / np.arange(1, n))
+
+
+def test_tv():
+    eta1 = SizeHistory(t=np.array([0.0]), c=np.ones(1))
+    np.testing.assert_allclose(eta1.tv(eta1), 0.0)
+    eta2 = eta1._replace(c=2 * eta1.c)
+    tv1 = eta1.tv(eta2, 10)
+    assert 0 <= tv1 <= 1
+
+
+def test_l2():
+    eta1 = SizeHistory(t=np.array([0.0]), c=np.ones(1))
+    np.testing.assert_allclose(eta1.l2(eta1, 10.0), 0.0)
+    eta2 = eta1._replace(c=2 * eta1.c)
+    assert eta1.l2(eta2, 1.0) > 0
 
 
 def test_expm1inv(rng):
