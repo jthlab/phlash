@@ -54,3 +54,4 @@ MANIFEST
 .python-version
 .ipynb_checkpoints
 .pdm-python
+src/phlash/_version.py

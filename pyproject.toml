@@ -79,6 +79,9 @@ exclude = ['.tox', 'build', 'dist', '.eggs', 'docs/conf.py']
 # some environment variables need to be set before loading jax
 per-file-ignores = ['src/phlash/__init__.py:E402']
 
+[tool.setuptools_scm]
+version_file = "src/phlash/_version.py"
+
 [tool.coverage.run]
 branch = true
 source = ['src/phlash']
@@ -106,6 +109,4 @@ ignore_errors = true
 
 [tool.coverage.html]
 directory = "coverage_html_report"
-
-[tool.setuptools_scm]
 
