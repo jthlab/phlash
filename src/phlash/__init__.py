@@ -14,18 +14,9 @@ import sys
 import jax
 
 jax.config.update("jax_enable_x64", True)
-from loguru import logger
 
 from phlash.data import contig
 from phlash.mcmc import fit
-
-if jax.local_devices()[0].platform != "gpu":
-    logger.warning(
-        "Detected that Jax is not running on GPU; you appear to have "
-        "CPU-mode Jax installed. Performance may be improved by installing "
-        "Jax-GPU instead. For installation instructions visit:\n\n\t{}\n",
-        "https://github.com/google/jax?tab=readme-ov-file#installation",
-    )
 
 __all__ = ["fit", "contig"]
 

@@ -16,6 +16,16 @@ from phlash.size_history import DemographicModel
 from phlash.util import tree_unstack
 
 
+def _check_jax_gpu():
+    if jax.local_devices()[0].platform != "gpu":
+        logger.warning(
+            "Detected that Jax is not running on GPU; you appear to have "
+            "CPU-mode Jax installed. Performance may be improved by installing "
+            "Jax-GPU instead. For installation instructions visit:\n\n\t{}\n",
+            "https://github.com/google/jax?tab=readme-ov-file#installation",
+        )
+
+
 def fit(
     data: list[Contig],
     test_data: Contig = None,
@@ -48,6 +58,7 @@ def fit(
           procedure in various ways. See the source code of this function for more
           information.
     """
+    _check_jax_gpu()
     # some defaults pulled from the options dict
     key = options.get("key", jax.random.PRNGKey(1))
     # the number of svgd iterations. if a test dataset is provided, the optimizer
