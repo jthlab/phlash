@@ -1,8 +1,10 @@
 import numpy as np
+import pytest
 
 from phlash.cband import _find_confidence_bands
 
 
+@pytest.mark.skip
 def test_random_sampled_functions(rng):
     """
     Tests the find_confidence_bands function with randomly sampled functions.

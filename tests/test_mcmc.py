@@ -4,8 +4,10 @@ from phlash.size_history import DemographicModel
 
 
 def test_functional1():
-    truth, chd = phlash.sim.stdpopsim_dataset("HomSap", "Zigzag_1S14", {"generic": 20})
-    res = phlash.mcmc.fit(chd, options=dict(niter=5))
+    sim = phlash.sim.stdpopsim_dataset(
+        "HomSap", "Zigzag_1S14", {"generic": 1}, options={"length_multiplier": 0.01}
+    )
+    res = phlash.mcmc.fit(list(sim["data"].values()), niter=5, num_particles=123)
     assert isinstance(res, list)
-    assert len(res) == 500
+    assert len(res) == 123
     assert isinstance(res[0], DemographicModel)
