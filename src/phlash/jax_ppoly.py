@@ -28,7 +28,7 @@ class JaxPPoly(NamedTuple):
     def antiderivative(self):
         c1 = vmap(jnp.polyint, in_axes=1, out_axes=1)(self.c)
         c0 = jnp.polyval(c1[:, :-1], jnp.diff(self.x)[:-1])
-        z = jnp.zeros_like(c0[:1])
+        z = jnp.zeros([1])
         d = jnp.cumsum(jnp.concatenate([z, c0]))
         e = jnp.concatenate([c1[:-1], d[None]])
         return JaxPPoly(x=self.x, c=e)
