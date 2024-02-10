@@ -52,22 +52,17 @@ url = "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html"
 type = "find_links"
 verify_ssl = true
 
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "flake8>=7.0.0",
+    "flake8-pyproject>=1.2.3",
+]
+
 [tool.isort]
 profile = "black"
 known_first_party = "phlash"
-
-[tool.tox]
-legacy_tox_ini = """
-[tox]
-isolated_build = true
-envlist = py310,py311
-
-[testenv]
-deps =
-    pytest
-commands =
-    pytest tests/ --import-mode importlib
-"""
 
 [tool.flake8]
 # Some sane defaults for the code style checker flake8
@@ -75,7 +70,7 @@ max_line_length = 88
 extend_ignore = ['E203', 'W503', 'F722', 'F821']
 # ^  Black-compatible
 #    E203 and W503 have edge cases handled by black
-exclude = ['.tox', 'build', 'dist', '.eggs', 'docs/conf.py']
+exclude = ['.git', 'build', 'dist', 'venv', 'lib', 'docs', 'notebooks']
 # some environment variables need to be set before loading jax
 per-file-ignores = ['src/phlash/__init__.py:E402']
 
