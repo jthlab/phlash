@@ -32,7 +32,7 @@ def ASSERT_DRV(err):
             raise CudaError(err)
     elif isinstance(err, nvrtc.nvrtcResult):
         if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
-            _, name = nvrtc.nvrtcGetErrorString(error)
+            _, name = nvrtc.nvrtcGetErrorString(err)
             raise RuntimeError(f"Nvrtc Error {err}: {name}")
     elif isinstance(err, cudart.cudaError_t):
         if err != cudart.cudaError_t.cudaSuccess:
