@@ -127,7 +127,7 @@ class _PSMCKernelBase:
         if M != 16:
             warnings.warn("Performance is optimized when M=16")
         self._M = M
-        src = [f"constexpr int M = {M};"]
+        src = [f"#define M {M}"]
         if double_precision:
             src.append("typedef double FLOAT;")
         else:
@@ -477,7 +477,7 @@ KERNEL_SRC = r"""
 typedef signed char int8_t;
 typedef long long int64_t;
 
-constexpr int P = 7;
+#define P 7
 
 #define LOG_B 0
 #define LOG_D 1
