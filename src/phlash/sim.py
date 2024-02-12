@@ -25,6 +25,7 @@ class SimResult(TypedDict):
     truth: DemographicModel
 
 
+@memory.cache
 def stdpopsim_dataset(
     species_id: str,
     model_id: str,
