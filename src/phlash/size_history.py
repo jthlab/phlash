@@ -8,7 +8,6 @@ import msprime
 import numpy as np
 import scipy
 from jax import jit, vmap
-from scipy.integrate import quad
 from scipy.optimize import root_scalar
 
 from phlash.jax_ppoly import JaxPPoly
@@ -146,8 +145,7 @@ class SizeHistory(NamedTuple):
 
     def density(self, c: float = 1.0) -> Callable[[float], float]:
         R = self.R
-        f = self.to_pp()
-        return lambda x: f(x) * jnp.exp(-c * R(x))
+        return lambda x: c * self(x) * jnp.exp(-c * R(x))
 
     @property
     def sf(self) -> Callable[[float], float]:
@@ -219,24 +217,20 @@ class SizeHistory(NamedTuple):
 
     def tv(self, other: "SizeHistory", n: int = 2) -> float:
         "Total variation distance between coalescent densities"
-        f1 = self
-        f2 = other
-        R1 = f1.R
-        R2 = f2.R
         c = n * (n - 1) / 2
-
-        def g(x):
-            return _tv_helper(x, f1, R1, f2, R2, c)
-
-        p = sorted(set(self.t) | set(other.t))
-        assert p[0] == 0.0
-        I1, err1 = quad(g, 0.0, p[-1], points=p[1:-1])
-        I2, err2 = quad(g, p[-1], np.inf)
-        return 0.5 * (I1 + I2)
+        t = jnp.array(sorted(set(self.t.tolist()) | set(other.t.tolist())))
+        assert t[0] == 0.0
+        taug = jnp.append((t[:-1] + t[1:]) / 2, t[-1] + 1.0)
+        # align the two size histories
+        eta1 = SizeHistory(t=t, c=c * self(taug))
+        eta2 = SizeHistory(t=t, c=c * other(taug))
+        R1 = eta1.R
+        R2 = eta2.R
+        return _tv(R1, R2)
 
     def l2(self, other: "SizeHistory", t_max) -> float:
         "L2 distance between N_self(t) and N_other(t) up to time t_max."
-        t = np.array([sorted(set(self.t) | set(other.t) | {t_max})])
+        t = np.array([sorted(set(self.t.tolist()) | set(other.t.tolist()) | {t_max})])
         t = t[t <= t_max]
         # both Ne functions will be constant on the unioned intervals, so we can call
         # them at the interval midpoint to get the correct value
@@ -270,8 +264,24 @@ class SizeHistory(NamedTuple):
 
 
 @jit
-def _tv_helper(x, f1, R1, f2, R2, c):
-    return c / 2 * abs(f1(x) * jnp.exp(-c * R1(x)) - f2(x) * jnp.exp(-c * R2(x)))
+def _tv(R1, R2):
+    return 0.5 * vmap(_tv_helper, (1, 1, 0))(R1.c, R2.c, R1.x[1:]).sum()
+
+
+def _tv_helper(ab1, ab2, T):
+    "int_0^T |a1 exp(-(a1*t + b1)) - a2 exp(-(a2*t + b2))| dt"
+    a1, b1 = ab1
+    a2, b2 = ab2
+
+    def I(a, b, U=jnp.inf):  # noqa: E743
+        "int_0^T a exp(-(a*t + b)) dt"
+        # works even if T=+oo assuming a>0 which it always is
+        return jnp.exp(-b) * jnp.where(jnp.isinf(U), 1.0, -jnp.expm1(-a * U))
+
+    t_star = jnp.clip((jnp.log(a1 / a2) + b2 - b1) / (a1 - a2), 0.0, T)
+    i1 = I(a1, b1, t_star)
+    i2 = I(a2, b2, t_star)
+    return abs(i1 - i2) + abs((I(a1, b1, T) - i1) - (I(a2, b2, T) - i2))
 
 
 def _psmc_size_history(pattern, alpha, t_max) -> SizeHistory:

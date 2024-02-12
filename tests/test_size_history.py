@@ -1,10 +1,27 @@
 import jax
+import jax.numpy as jnp
 import numpy as np
 import scipy
 from pytest import fixture
 from scipy.integrate import quad
 
-from phlash.size_history import SizeHistory, _expm1inv, _W_matrix
+from phlash.size_history import SizeHistory, _expm1inv, _tv_helper, _W_matrix
+
+
+@fixture
+def random_eta(rng):
+    def f():
+        log_dt, log_c = rng.normal(size=(2, 10))
+        t = np.exp(log_dt).cumsum()
+        t[0] = 0.0
+        return SizeHistory(t=jnp.array(t), c=jnp.exp(log_c))
+
+    return f
+
+
+@fixture
+def eta(random_eta):
+    return random_eta()
 
 
 def test_pi():
@@ -18,14 +35,6 @@ def test_pi():
     q = scipy.stats.expon.ppf([0.25, 0.5, 0.75])
     eta = SizeHistory(t=np.concatenate([[0.0], q]), c=np.ones(4))
     np.testing.assert_allclose(eta.pi, 0.25)
-
-
-@fixture
-def eta(rng):
-    log_dt, log_c = rng.normal(size=(2, 10))
-    t = np.exp(log_dt).cumsum()
-    t[0] = 0.0
-    return SizeHistory(t=t, c=np.exp(log_c))
 
 
 def test_R(eta, rng):
@@ -58,21 +67,72 @@ def test_W():
     np.testing.assert_allclose(v, 2 / np.arange(1, n))
 
 
-def test_tv():
-    eta1 = SizeHistory(t=np.array([0.0]), c=np.ones(1))
+def test_tv(eta):
+    eta1 = eta
     np.testing.assert_allclose(eta1.tv(eta1), 0.0)
     eta2 = eta1._replace(c=2 * eta1.c)
     tv1 = eta1.tv(eta2, 10)
     assert 0 <= tv1 <= 1
 
 
+def test_density(eta, rng):
+    c = rng.normal() ** 2
+    f = jax.jit(eta.density(c))
+    I, err = quad(f, 0.0, np.inf)
+    np.testing.assert_allclose(I, 1.0, atol=err)
+
+
+def test_tv_quad(random_eta, rng):
+    eta1 = random_eta()
+    eta2 = random_eta()
+    n = rng.integers(2, 20)
+    c = n * (n - 1) / 2
+    f1 = eta1.density(c)
+    f2 = eta2.density(c)
+    g = jax.jit(lambda t: 0.5 * abs(f1(t) - f2(t)))
+    t = sorted(set(eta1.t.tolist()) | set(eta2.t.tolist()))
+    tv1a, err = quad(g, 0.0, t[-1], points=t[1:-1])
+    tv1b, err = quad(g, t[-1], np.inf)
+    tv1 = tv1a + tv1b
+    tv2 = eta1.tv(eta2, n)
+    np.testing.assert_allclose(tv1, tv2)
+
+
 def test_l2():
-    eta1 = SizeHistory(t=np.array([0.0]), c=np.ones(1))
+    eta1 = SizeHistory(t=jnp.array([0.0]), c=jnp.ones(1))
     np.testing.assert_allclose(eta1.l2(eta1, 10.0), 0.0)
     eta2 = eta1._replace(c=2 * eta1.c)
     assert eta1.l2(eta2, 1.0) > 0
 
 
+def test_l2_quad(random_eta, rng):
+    eta1 = random_eta()
+    eta2 = random_eta()
+    T = 5.0 + abs(rng.normal())
+    g = jax.jit(lambda t: (eta1(t, Ne=True) - eta2(t, Ne=True)) ** 2)
+    t = np.array(sorted(set(eta1.t.tolist()) | set(eta2.t.tolist())))
+    t = t[t < T]
+    l1a, err = quad(g, 0.0, t[-1], points=t[1:-1])
+    l1b, err = quad(g, t[-1], T)
+    l1 = jnp.sqrt(l1a + l1b)
+    l2 = eta1.l2(eta2, T)
+    np.testing.assert_allclose(l1, l2)
+
+
 def test_expm1inv(rng):
     y = rng.normal(size=100) * 10
     np.testing.assert_allclose(1.0 / np.expm1(y), _expm1inv(y))
+
+
+def test_tv_helper(rng):
+    ab1, ab2 = (a1, b1), (a2, b2) = rng.normal(size=(2, 2)) ** 2
+    T = rng.normal() ** 2
+    y1 = _tv_helper(ab1, ab2, T)
+    y2, err = quad(
+        jax.jit(
+            lambda t: abs(a1 * jnp.exp(-(a1 * t + b1)) - a2 * jnp.exp(-(a2 * t + b2)))
+        ),
+        0.0,
+        T,
+    )
+    np.testing.assert_allclose(y1, y2)
