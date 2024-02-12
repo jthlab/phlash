@@ -13,7 +13,7 @@ from phlash.data import Contig, init_mcmc_data
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
-from phlash.util import tree_unstack
+from phlash.util import Pattern, tree_unstack
 
 
 def _check_jax_gpu():
@@ -130,16 +130,20 @@ def fit(
         t1 = options.get("t1", 1e-4) * 2 * N0
         tM = options.get("tM", 15.0) * 2 * N0
         rho = options.get("rho_over_theta", 1.0) * theta
+        # this pattern is similar to the psmc default, but we have fewer params
+        # (16) to use, so are a little more conservative with parameter tying
+        pat = "1*3+11*1+1*2"
         init = MCMCParams.from_linear(
-            # this pattern is similar to the psmc default, but we have fewer params
-            # (16) to use, so are a little more conservative with parameter tying
-            pattern="14*1+1*2",
+            pattern=pat,
             rho=rho * window_size,
             t1=t1,
             tM=tM,
-            c=jnp.ones(15) / 2.0 / N0,  # this should equal len(Pattern(pattern))
+            c=jnp.ones(len(Pattern(pat)))
+            / 2.0
+            / N0,  # this should equal len(Pattern(pattern))
             theta=theta * window_size,
             alpha=options.get("alpha", 0.0),
+            beta=options.get("beta", 0.0),
         )
     assert isinstance(init, MCMCParams)
     opt = optax.amsgrad(learning_rate=options.get("learning_rate", 0.1))
