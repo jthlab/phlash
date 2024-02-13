@@ -272,7 +272,12 @@ class VcfContig(Contig):
     def L(self):
         "Length of sequence"
         if self.interval is None:
-            return None
+            v = self._vcf
+            if self.contig is None:
+                assert len(v.seqnames) == 1
+                return v.seqlens[0]
+            else:
+                return v.seqlens[v.seqnames.index(self.contig)]
         return self.interval[1] - self.interval[0]
 
     def __post_init__(self):
@@ -293,10 +298,13 @@ class VcfContig(Contig):
             raise ValueError(
                 "samples should be a list of (string) sample identifiers in the vcf"
             )
-        vcf = cyvcf2.VCF(self.vcf_file)
-        diff = set(self.samples) - set(vcf.samples)
+        diff = set(self.samples) - set(self._vcf.samples)
         if diff:
             raise ValueError(f"the following samples were not found in the vcf: {diff}")
+
+    @property
+    def _vcf(self):
+        return cyvcf2.VCF(self.vcf_file)
 
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
         args = (self.vcf_file, self.samples, window_size)
