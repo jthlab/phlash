@@ -265,7 +265,8 @@ class SizeHistory(NamedTuple):
 
 @jit
 def _tv(R1, R2):
-    return 0.5 * vmap(_tv_helper, (1, 1, 0))(R1.c, R2.c, R1.x[1:]).sum()
+    v = vmap(_tv_helper, (1, 1, 0))(R1.c, R2.c, jnp.diff(R1.x))
+    return 0.5 * v.sum()
 
 
 def _tv_helper(ab1, ab2, T):

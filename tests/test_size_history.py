@@ -1,3 +1,6 @@
+import os.path
+import pickle
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -136,3 +139,27 @@ def test_tv_helper(rng):
         T,
     )
     np.testing.assert_allclose(y1, y2)
+
+
+def test_tv_bug():
+    fn = os.path.join(os.path.dirname(__file__), "fixtures", "tv_bug.pkl")
+    eta1, eta2 = pickle.load(open(fn, "rb"))
+    eta1, eta2 = (
+        SizeHistory(t=jnp.array(eta.t), c=jnp.array(eta.c)) for eta in [eta1, eta2]
+    )
+    tv1 = eta1.tv(eta2)
+    tv2 = eta2.tv(eta1)
+    np.testing.assert_allclose(tv1, tv2)
+    assert tv1 >= 0.0
+    assert tv1 <= 1.0
+    f1 = eta1.density()
+    f2 = eta2.density()
+    t = sorted({float(tt) for eta in [eta1, eta2] for tt in eta.t})
+    f = jax.jit(lambda t: 0.5 * abs(f1(t) - f2(t)))
+    I1, err1 = quad(f, 0.0, t[-1], points=t[1:-1], limit=2 * len(t))
+    # quad really sucks at this second integral.
+    t_max = 2 * t[-1]
+    while f(t_max) > 1e-20:
+        t_max *= 2
+    I2, err2 = quad(f, t[-1], t_max)
+    np.testing.assert_allclose(tv1, I1 + I2)
