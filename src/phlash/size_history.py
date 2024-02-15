@@ -215,8 +215,9 @@ class SizeHistory(NamedTuple):
         W = _W_matrix(n)
         return W @ self.etjj(n)
 
-    def tv(self, other: "SizeHistory", n: int = 2) -> float:
+    def tv(self, other: "SizeHistory", n: int = 1) -> float:
         "Total variation distance between coalescent densities"
+        n *= 2  # diploid => haploid
         c = n * (n - 1) / 2
         t = jnp.array(sorted(set(self.t.tolist()) | set(other.t.tolist())))
         assert t[0] == 0.0
@@ -279,7 +280,11 @@ def _tv_helper(ab1, ab2, T):
         # works even if T=+oo assuming a>0 which it always is
         return jnp.exp(-b) * jnp.where(jnp.isinf(U), 1.0, -jnp.expm1(-a * U))
 
-    t_star = jnp.clip((jnp.log(a1 / a2) + b2 - b1) / (a1 - a2), 0.0, T)
+    a1_eq_a2 = jnp.isclose(a1, a2)
+    a1_m_a2_safe = jnp.where(a1_eq_a2, 1.0, a1 - a2)
+
+    t_star = jnp.clip((jnp.log(a1 / a2) + b2 - b1) / a1_m_a2_safe, 0.0, T)
+    t_star = jnp.where(a1_eq_a2, 0.0, t_star)
     i1 = I(a1, b1, t_star)
     i2 = I(a2, b2, t_star)
     return abs(i1 - i2) + abs((I(a1, b1, T) - i1) - (I(a2, b2, T) - i2))

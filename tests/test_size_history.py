@@ -54,7 +54,7 @@ def test_etjj(eta):
 
 
 def test_mean1():
-    eta = SizeHistory(t=np.array([0.0, np.inf]), c=np.ones(1))
+    eta = SizeHistory(t=np.array([0.0]), c=np.ones(1))
     n = 20
     etjj = eta.etjj(n)
     k = np.arange(2, n + 1)
@@ -64,7 +64,7 @@ def test_mean1():
 def test_W():
     n = 10
     W = _W_matrix(n)
-    eta = SizeHistory(t=np.array([0.0, np.inf]), c=np.ones(1))
+    eta = SizeHistory(t=np.array([0.0]), c=np.ones(1))
     etjj = eta.etjj(n)
     v = W @ etjj
     np.testing.assert_allclose(v, 2 / np.arange(1, n))
@@ -89,7 +89,7 @@ def test_tv_quad(random_eta, rng):
     eta1 = random_eta()
     eta2 = random_eta()
     n = rng.integers(2, 20)
-    c = n * (n - 1) / 2
+    c = 2 * n * (2 * n - 1) / 2
     f1 = eta1.density(c)
     f2 = eta2.density(c)
     g = jax.jit(lambda t: 0.5 * abs(f1(t) - f2(t)))
