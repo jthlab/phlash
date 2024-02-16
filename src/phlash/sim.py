@@ -15,7 +15,6 @@ import stdpopsim
 from loguru import logger
 
 from phlash.data import Contig, TreeSequenceContig, VcfContig
-from phlash.memory import memory
 from phlash.mp import JaxCpuProcessPoolExecutor
 from phlash.size_history import DemographicModel, SizeHistory
 
@@ -25,7 +24,6 @@ class SimResult(TypedDict):
     truth: DemographicModel
 
 
-@memory.cache
 def stdpopsim_dataset(
     species_id: str,
     model_id: str,
@@ -120,7 +118,6 @@ def compute_truth(
     return SizeHistory(t=t, c=c)
 
 
-@memory.cache
 def _get_N0(dm: stdpopsim.DemographicModel, pop_dict: dict) -> float:
     "Compute N0 = ETMRCA / 2. for this demographic model."
     # this involves numerical integration and can be really slow, so it's cached.

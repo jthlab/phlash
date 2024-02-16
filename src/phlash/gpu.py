@@ -11,7 +11,6 @@ from jax import custom_vjp, tree_map
 from loguru import logger
 
 import phlash.size_history
-from phlash.memory import memory
 from phlash.params import PSMCParams
 
 
@@ -41,7 +40,6 @@ def ASSERT_DRV(err):
         raise RuntimeError(f"Unknown error type: {err}")
 
 
-@memory.cache
 def _compile(code: str, compute_capability: str) -> bytes:
     err, prog = nvrtc.nvrtcCreateProgram(str.encode(code), b"kern.cu", 0, [], [])
     ASSERT_DRV(err)

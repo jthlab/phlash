@@ -15,7 +15,6 @@ from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
 
-from phlash.memory import memory
 from phlash.mp import JaxCpuProcessPoolExecutor
 
 
@@ -221,7 +220,6 @@ class TreeSequenceContig(Contig):
         return dict(afs=afs, het_matrix=het_matrix)
 
 
-@memory.cache
 def _read_ts(
     ts: tskit.TreeSequence,
     nodes: list[tuple[int, int]],
@@ -307,7 +305,6 @@ class VcfContig(Contig):
         return _read_vcf(*args)
 
 
-@memory.cache
 def _read_vcf(
     vcf_file: str,
     samples: list[str],
