@@ -126,14 +126,11 @@ def _get_N0(dm: stdpopsim.DemographicModel, pop_dict: dict) -> float:
     return dm.model.debug().mean_coalescence_time(pop_dict, max_iter=20, rtol=0.01) / 2
 
 
-def _simulate(
+def _params_for_sim(
     model: stdpopsim.DemographicModel,
     chrom: stdpopsim.Contig,
     pop_dict: dict,
-    seed: int,
-    use_scrm: bool,
-    return_vcf: bool,
-) -> Contig:
+):
     active_pops = [p for p, n in pop_dict.items() if n > 0]
     if len(active_pops) == 1:
         pd = {active_pops[0]: 2}
@@ -146,12 +143,24 @@ def _simulate(
     r = r.item()
     L = chrom.length
     rho = 4 * N0 * r * L
-    if use_scrm or (use_scrm is None and rho > 1e5 and return_vcf is not False):
+    return dict(rho=rho, L=L, N0=N0)
+
+
+def _simulate(
+    model: stdpopsim.DemographicModel,
+    chrom: stdpopsim.Contig,
+    pop_dict: dict,
+    seed: int,
+    use_scrm: bool,
+    return_vcf: bool,
+) -> Contig:
+    pd = _params_for_sim(model, chrom, pop_dict)
+    if use_scrm or (use_scrm is None and pd["rho"] > 1e5 and return_vcf is not False):
         logger.debug(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
         try:
-            return _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf)
+            return _simulate_scrm(model, chrom, pop_dict, pd["N0"], seed, return_vcf)
         except Exception as e:
             logger.debug("Running scrm failed: {}", e)
     return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
@@ -172,7 +181,7 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
     return TreeSequenceContig(ts)
 
 
-def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str:
+def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
     assert chrom.interval_list[0].shape == (1, 2)
     assert chrom.interval_list[0][0, 0] == 0.0
     L = chrom.interval_list[0][0, 1]
@@ -203,8 +212,19 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf) -> Contig | str
             seed,
         ]
     )
+    if sum(samples) > 200:
+        # for simulating very large samples, reduce the number of recombination windows
+        args.extend(["-l", "100r"])
     scrm = os.environ.get("SCRM_PATH", "scrm")
     cmd = [scrm, sum(samples), 1] + args
+    cmd = list(map(str, cmd))
+    # if an output file is specified, save it and return
+    # this functionality is here mainly for the paper pipeline
+    if out_file is not None:
+        with open(out_file, "w") as f:
+            subprocess.run(cmd, stdout=f, text=True)
+            return
+    # otherwise, process the file and return a vcf
     with subprocess.Popen(
         list(map(str, cmd)),
         stdout=subprocess.PIPE,
