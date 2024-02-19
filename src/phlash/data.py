@@ -2,7 +2,7 @@
 
 import re
 from abc import ABC, abstractmethod
-from concurrent.futures import as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
@@ -14,8 +14,6 @@ import tszip
 from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
-
-from phlash.mp import JaxCpuProcessPoolExecutor
 
 
 class ChunkedContig(NamedTuple):
@@ -457,6 +455,7 @@ def init_mcmc_data(
     overlap: int,
     chunk_size: int = None,
     max_samples: int = 20,
+    num_workers: int = None,
 ):
     """Chunk up the data. If chunk_size is missing, set it to ~1/5th of the shortest
     contig. (This may not be optimal)."""
@@ -473,19 +472,21 @@ def init_mcmc_data(
         )
     chunks = []
     total_size = sum(ds.size for ds in data if ds.size)
-    with JaxCpuProcessPoolExecutor() as pool:
+    with ThreadPoolExecutor(num_workers) as pool:
         futs = {}
-        for ds in data:
+        for i, ds in enumerate(data):
             fut = pool.submit(
                 ds.to_chunked,
                 overlap=overlap,
                 chunk_size=chunk_size,
                 window_size=window_size,
             )
-            futs[fut] = ds.size
+            futs[fut] = i
         with tqdm.tqdm(total=total_size, unit="bp", unit_scale=True) as pbar:
             for f in as_completed(futs):
-                size = futs[f]
+                i = futs[f]
+                size = data[i].size
+                data[i] = None  # free memory associated with dataset
                 if size:
                     pbar.update(size)
                 d = f.result()

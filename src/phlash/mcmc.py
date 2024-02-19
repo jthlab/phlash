@@ -75,7 +75,13 @@ def fit(
     # the size of each "chunk", see manuscript. this is estimated from data.
     chunk_size = options.get("chunk_size")
     max_samples = options.get("max_samples", 20)
-    afs, chunks = init_mcmc_data(data, window_size, overlap, chunk_size, max_samples)
+    # the number of parallel workers
+    num_workers = options.get("num_workers")
+    afs, chunks = init_mcmc_data(
+        data, window_size, overlap, chunk_size, max_samples, num_workers
+    )
+    # to conserve memory, we get rid of data at this point
+    del data
     # the mutation rate per generation, if known.
     mutation_rate = options.get("mutation_rate")
     # if we know the true dm, just use its mutation rate
