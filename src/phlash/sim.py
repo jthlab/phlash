@@ -101,12 +101,14 @@ def stdpopsim_dataset(
 
 
 def compute_truth(
-    model: stdpopsim.DemographicModel, populations: list[str]
+    model: stdpopsim.DemographicModel, populations: list[str], **kwargs
 ) -> SizeHistory:
     "Compute pairwise coalescent rate function for model and populations."
     md = model.model.debug()
     t_min = 1e1
     t_max = max(1e5, md.epochs[-1].start_time + 1)
+    t_min = kwargs.get("t_min", t_min)
+    t_max = kwargs.get("t_max", t_max)
     assert np.isinf(md.epochs[-1].end_time)
     t = np.geomspace(t_min, t_max, 1000)
     if len(populations) == 1:
