@@ -1,4 +1,5 @@
 import ctypes
+import os.path
 import threading
 import warnings
 from functools import partial, singledispatchmethod
@@ -6,6 +7,7 @@ from functools import partial, singledispatchmethod
 import jax
 import jax.numpy as jnp
 import numpy as np
+import nvidia.cuda_nvrtc.lib
 from cuda import cuda, cudart, nvrtc
 from jax import custom_vjp, tree_map
 from loguru import logger
@@ -75,6 +77,12 @@ class CudaInitializer:
     def initialize_cuda(cls):
         with cls._lock:
             if not cls._initialized:
+                libnvrtc_path = os.path.join(
+                    nvidia.cuda_nvrtc.lib.__path__[0], "libnvrtc.so.12"
+                )
+                # I think we need to hold a reference to this library until the next
+                # call so that it can be found when cuInit calls dlopen
+                libnvrtc = ctypes.CDLL(libnvrtc_path)  # noqa: F841
                 (err,) = cuda.cuInit(0)
                 ASSERT_DRV(err)
                 cls._initialized = True
