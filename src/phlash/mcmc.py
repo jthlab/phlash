@@ -129,24 +129,25 @@ def fit(
     # it seems to be numerically better (estimates are more accurate) to work in the
     # coalescent scaling. perhaps because all the calculations are "O(1)" instead of
     # "O(huge number) * O(tiny number)" ...
-    N0 = 1.0
-    theta = watterson / 4.0 / N0
+    theta = watterson / 4  # i.e., N0=1
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
-        t1 = options.get("t1", 1e-4) * 2 * N0
-        tM = options.get("tM", 15.0) * 2 * N0
+        if mutation_rate is not None:
+            N0 = watterson / 4 / mutation_rate
+            options.setdefault("t1", 1e1 / 2 / N0)
+            options.setdefault("tM", 1e6 / 2 / N0)
+        t1 = options.get("t1", 1e-4)
+        tM = options.get("tM", 15.0)
         rho = options.get("rho_over_theta", 1.0) * theta
         # this pattern is similar to the psmc default, but we have fewer params
         # (16) to use, so are a little more conservative with parameter tying
-        pat = "1*3+11*1+1*2"
+        pat = "14*1+1*2"
         init = MCMCParams.from_linear(
             pattern=pat,
             rho=rho * window_size,
             t1=t1,
             tM=tM,
-            c=jnp.ones(len(Pattern(pat)))
-            / 2.0
-            / N0,  # this should equal len(Pattern(pattern))
+            c=jnp.ones(len(Pattern(pat))),  # len(c)==len(Pattern(pattern))
             theta=theta * window_size,
             alpha=options.get("alpha", 0.0),
             beta=options.get("beta", 0.0),
