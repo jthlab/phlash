@@ -3,6 +3,7 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
+import jax.scipy as jsp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 
@@ -63,7 +64,7 @@ class MCMCParams:
     pattern: jdc.Static[str]
     t_tr: jax.Array
     c_tr: jax.Array
-    log_rho: float
+    rho_over_theta_tr: float
     theta: jdc.Static[float]
     alpha: jdc.Static[float]
     beta: jdc.Static[float]
@@ -82,12 +83,13 @@ class MCMCParams:
     ) -> "MCMCParams":
         dtM = tM - t1
         assert len(Pattern(pattern)) == len(c)  # one c per epoch
+        rho_over_theta_tr = jsp.special.logit((rho / theta - 0.1) / 9.9)
         return cls(
             pattern=pattern,
             c_tr=jnp.log(c),
             t_tr=jnp.log(jnp.array([t1, dtM])),
+            rho_over_theta_tr=rho_over_theta_tr,
             theta=theta,
-            log_rho=jnp.log(rho),
             alpha=alpha,
             beta=beta,
         )
@@ -110,8 +112,13 @@ class MCMCParams:
         return Pattern(self.pattern).M
 
     @property
+    def rho_over_theta(self):
+        # this transformation ensures that rho/theta is in [.1, 10]
+        return 0.1 + 9.9 * jsp.special.expit(self.rho_over_theta_tr)
+
+    @property
     def rho(self):
-        return jnp.exp(self.log_rho)
+        return self.rho_over_theta * self.theta
 
     @property
     def t(self):

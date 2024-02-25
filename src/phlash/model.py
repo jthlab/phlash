@@ -13,7 +13,7 @@ def log_prior(mcp: MCMCParams) -> float:
     ret = sum(
         jax.scipy.stats.norm.logpdf(a, loc=mu, scale=sigma).sum()
         for (a, mu, sigma) in [
-            (mcp.log_rho, jnp.log(dm.theta), 1.0),
+            (jnp.log(mcp.rho_over_theta), 0.0, 1.0),
         ]
     )
     ret -= mcp.alpha * jnp.sum(jnp.diff(mcp.log_c) ** 2)
