@@ -26,6 +26,9 @@ def _check_jax_gpu():
         )
 
 
+_particles = None  # for debugging
+
+
 def fit(
     data: list[Contig],
     test_data: Contig = None,
@@ -204,7 +207,7 @@ def fit(
         @jit
         def elpd(mcps):
             @vmap
-            def ll(mcp):
+            def _elpd_ll(mcp):
                 return log_density(
                     mcp,
                     c=jnp.array([0.0, 1.0, 1.0]),
@@ -215,7 +218,7 @@ def fit(
                     use_folded_afs=fold_afs,
                 )
 
-            return jax.scipy.special.logsumexp(ll(mcps)).mean()
+            return _elpd_ll(mcps).mean()
 
     # to have unbiased gradient estimates, need to pre-multiply the chunk term by ratio
     # (dataset size) / (minibatch size) = N / S.
@@ -248,6 +251,7 @@ def fit(
 
     ema = best_elpd = None
     a = 0
+    global _particles  # for debugging
     with tqdm.trange(
         niter, disable=not options.get("progress", True), desc="Fitting model"
     ) as pbar:
@@ -255,7 +259,14 @@ def fit(
             key, subkey = jax.random.split(key, 2)
             inds = kw["inds"] = jax.random.choice(subkey, N, shape=(S,))
             kw["warmup"] = warmup_chunks[inds]
-            state = step(state, **kw)
+            state1 = step(state, **kw)
+
+            def f(x):
+                assert jnp.isfinite(x).all()
+                return x
+
+            state = jax.tree_map(f, state1)
+            _particles = state.particles
             if test_data is not None and i % 10 == 0:
                 e = elpd(state.particles)
                 if ema is None:
