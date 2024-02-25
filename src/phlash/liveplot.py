@@ -132,6 +132,7 @@ class _IPythonLivePlot:
 
         self._qtiles = jit(qtiles)
         self._fig.show("PhlashRenderer")
+        self._handle = display(display_id=True)
 
     def __call__(self, dms: DemographicModel):
         if self._x is None:
@@ -142,4 +143,4 @@ class _IPythonLivePlot:
         ]
         js_args = ", ".join(map(json.dumps, args))
         js = f"window.updatePhlashPlot({js_args})"
-        display(Javascript(js))
+        self._handle.update(Javascript(js))
