@@ -9,12 +9,7 @@ from jaxtyping import Array, Float
 
 import phlash.size_history
 import phlash.transition
-from phlash.util import Pattern
-
-
-def softplus_inv(y):
-    # y > 0
-    return y + jnp.log1p(-jnp.exp(-y))
+from phlash.util import Pattern, softplus_inv
 
 
 class PSMCParams(NamedTuple):
@@ -79,15 +74,16 @@ class MCMCParams:
         theta: float,
         rho: float,
         alpha: float = 0.0,
-        beta: float = 1e-4,
+        beta: float = 1e-3,
     ) -> "MCMCParams":
         dtM = tM - t1
+        t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])
         assert len(Pattern(pattern)) == len(c)  # one c per epoch
         rho_over_theta_tr = jsp.special.logit((rho / theta - 0.1) / 9.9)
         return cls(
             pattern=pattern,
-            c_tr=jnp.log(c),
-            t_tr=jnp.log(jnp.array([t1, dtM])),
+            c_tr=softplus_inv(c),
+            t_tr=t_tr,
             rho_over_theta_tr=rho_over_theta_tr,
             theta=theta,
             alpha=alpha,
@@ -97,8 +93,7 @@ class MCMCParams:
     def to_dm(self) -> phlash.size_history.DemographicModel:
         pat = Pattern(self.pattern)
         assert len(pat) == len(self.c)
-        t1, dtM = self.t
-        tM = t1 + dtM
+        t1, tM = self.t
         t = jnp.insert(jnp.geomspace(t1, tM, pat.M - 1), 0, 0.0)
         c = jnp.array(pat.expand(self.c))
         eta = phlash.size_history.SizeHistory(t=t, c=c)
@@ -122,12 +117,14 @@ class MCMCParams:
 
     @property
     def t(self):
-        return jnp.exp(self.t_tr)
+        t1, dtM = jnp.exp(self.t_tr)
+        tM = t1 + dtM
+        return t1, tM
 
     @property
     def c(self):
-        return jnp.exp(self.c_tr)
+        return jax.nn.softplus(self.c_tr)
 
     @property
     def log_c(self):
-        return self.c_tr
+        return jnp.log(self.c)

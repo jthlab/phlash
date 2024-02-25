@@ -50,3 +50,8 @@ def fold_afs(afs):
         m = n // 2
         return jnp.append(fold_afs(jnp.delete(afs, m)), afs[m])
     return afs[: n // 2] + afs[-1 : -1 - n // 2 : -1]
+
+
+def softplus_inv(y):
+    # y > 0
+    return y + jnp.log1p(-jnp.exp(-y))
