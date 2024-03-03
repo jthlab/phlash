@@ -1,5 +1,7 @@
 import jax.numpy as jnp
 import jax.tree_util as jtu
+import numpy as np
+import scipy
 
 
 class Pattern:
@@ -50,6 +52,17 @@ def fold_afs(afs):
         m = n // 2
         return jnp.append(fold_afs(jnp.delete(afs, m)), afs[m])
     return afs[: n // 2] + afs[-1 : -1 - n // 2 : -1]
+
+
+def project_afs(afs, m):
+    """Project an n-dimensional afs (i.e. an (n-1)-dimensional count vector) to an
+    m-dimensional afs (i.e. an (m-1)-dimensional count vector)."""
+    assert afs.ndim == 1
+    n = afs.size + 1
+    assert n > m
+    i, j = np.ogrid[1:m, 1:n]
+    B = scipy.stats.hypergeom.pmf(M=n, N=m, n=j, k=i)
+    return B @ afs
 
 
 def softplus_inv(y):

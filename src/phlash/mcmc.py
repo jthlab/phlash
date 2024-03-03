@@ -13,7 +13,7 @@ from phlash.data import Contig, init_mcmc_data
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
-from phlash.util import Pattern, tree_unstack
+from phlash.util import Pattern, project_afs, tree_unstack
 
 
 def _check_jax_gpu():
@@ -96,6 +96,18 @@ def fit(
     elpd_cutoff = options.get("elpd_cutoff", 100)
     # If true, use the folded afs for inference
     fold_afs = options.get("fold_afs", True)
+
+    # If not None, downsample the afs to this sample size
+    if options.get("downsample_afs"):
+        m = options["downsample_afs"]
+
+        def downsample_afs(afs):
+            return project_afs(afs, m)
+
+    else:
+
+        def downsample_afs(afs):
+            return afs
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -214,7 +226,7 @@ def fit(
                     inds=jnp.arange(N_test),
                     kern=test_kern,
                     warmup=jnp.full([N_test, 1], -1, dtype=jnp.int8),
-                    afs=test_afs,
+                    afs=downsample_afs(test_afs),
                     use_folded_afs=fold_afs,
                 )
 
@@ -225,7 +237,7 @@ def fit(
     kw = dict(
         kern=train_kern,
         c=jnp.array([1.0, N / S, 1.0]),
-        afs=afs,
+        afs=downsample_afs(afs),
         use_folded_afs=fold_afs,
     )
 
