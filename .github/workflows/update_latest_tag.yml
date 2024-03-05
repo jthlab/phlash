@@ -1,0 +1,30 @@
+name: Update Latest Tag
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  tag-latest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Git
+        run: |
+          git config --global user.name 'Jonathan Terhorst'
+          git config --global user.email 'jonth@umich.edu'
+
+      - name: Fetch all tags and branches
+        run: git fetch --prune --unshallow
+
+      - name: Get latest version tag
+        id: latest-tag
+        run: echo "::set-output name=tag::$(git describe --tags `git rev-list --tags --max-count=1`)"
+
+      - name: Update latest tag
+        run: |
+          git tag -fa latest ${{ steps.latest-tag.outputs.tag }} -m "Update latest tag"
+          git push origin latest --force
