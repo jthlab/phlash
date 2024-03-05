@@ -41,16 +41,23 @@ def confidence_band(
     """
     eta = tree_stack(posterior)
     if approx:
+        if isinstance(approx, int):
+            M = approx
+        else:
+            M = 200
         t1 = eta.t[:, 1].min()
         tM = eta.t[:, -1].max()
-        t = np.geomspace(t1, tM, 200)
+        t = np.geomspace(t1, tM, M)
         t = np.insert(t, 0, 0.0)
     else:
         t = np.unique(eta.t.reshape(-1))
         np.sort(t)
-    A = np.asarray(vmap(SizeHistory.__call__, (0, None))(eta, t))
+    A = 1 / 2 / np.asarray(vmap(SizeHistory.__call__, (0, None))(eta, t))
     d = _find_confidence_bands(t, A, confidence_level, solver)
-    return (SizeHistory(t=t, c=d["lower"]), SizeHistory(t=t, c=d["upper"]))
+    return (
+        SizeHistory(t=t, c=1 / 2 / d["upper"]),
+        SizeHistory(t=t, c=1 / 2 / d["lower"]),
+    )
 
 
 def _find_confidence_bands(
@@ -99,7 +106,7 @@ def _find_confidence_bands(
     # Objective function
     prob += pl.lpSum([u[k] - ell[k] for k in range(K)])
 
-    M = A.max() - A.min() + 1
+    M = 10 * (A.max() - A.min() + 1)
 
     # Adding constraints
     for i in range(N):
