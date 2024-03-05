@@ -26,6 +26,7 @@ dependencies = [
     "jax-dataclasses<2.0.0,>=1.6.0",
     "tszip<1.0.0,>=0.2.3",
     "jaxtyping<1.0.0,>=0.2.25",
+    "pulp>=2.8.0",
 ]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"

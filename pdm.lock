@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:39f521b658beb9561dedcaf809f5c39495d3e778a2a892ceb7ea31a4632c0479"
+content_hash = "sha256:637110cf9e20d7b669ad0f2987d782c0154878211adac94a0eff4550474e8e13"
 
 [[package]]
 name = "absl-py"
@@ -462,7 +462,7 @@ files = [
 
 [[package]]
 name = "jaxlib"
-version = "0.4.24+cuda12.cudnn89"
+version = "0.4.24"
 requires_python = ">=3.9"
 summary = "XLA library for JAX"
 groups = ["default"]
@@ -1097,6 +1097,17 @@ groups = ["dev"]
 files = [
     {file = "pluggy-1.4.0-py3-none-any.whl", hash = "sha256:7db9f7b503d67d1c5b95f59773ebb58a8c1c288129a88665838012cfb07b8981"},
     {file = "pluggy-1.4.0.tar.gz", hash = "sha256:8c85c2876142a764e5b7548e7d9a0e0ddb46f5185161049a79b7e974454223be"},
+]
+
+[[package]]
+name = "pulp"
+version = "2.8.0"
+requires_python = ">=3.7"
+summary = "PuLP is an LP modeler written in python. PuLP can generate MPS or LP files and call GLPK, COIN CLP/CBC, CPLEX, and GUROBI to solve linear problems."
+groups = ["default"]
+files = [
+    {file = "PuLP-2.8.0-py3-none-any.whl", hash = "sha256:4a19814a5b0a4392d788ac2315263435293579b0583c3469943fe0c6a586f263"},
+    {file = "PuLP-2.8.0.tar.gz", hash = "sha256:4903bf96110bbab8ed2c68533f90565ebb76aa367d9e4df38e51bf727927c125"},
 ]
 
 [[package]]
