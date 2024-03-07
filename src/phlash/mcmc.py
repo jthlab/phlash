@@ -9,7 +9,7 @@ from jax import vmap
 from jax.flatten_util import ravel_pytree
 from loguru import logger
 
-from phlash.afs import fold_transform
+from phlash.afs import bws_transform, fold_transform
 from phlash.data import Contig, init_mcmc_data
 from phlash.model import log_density
 from phlash.params import MCMCParams
@@ -102,8 +102,11 @@ def fit(
     if options.get("afs_transform"):
         afs_transform = options["afs_transform"]
     else:
-        # by default, fold the afs
-        afs_transform = fold_transform(len(afs) + 1)
+        # by default, fold the afs and apply a 90% binning strategy as in
+        # Bhaskar-Wang-Song
+        T1 = fold_transform(len(afs) + 1)
+        T2 = bws_transform(T1 @ afs)
+        afs_transform = T2 @ T1
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
