@@ -50,7 +50,7 @@ files = [
 
 [[package]]
 name = "blackjax"
-version = "1.1.0"
+version = "1.1.1"
 requires_python = ">=3.9"
 summary = "Flexible and fast sampling in Python"
 groups = ["default"]
@@ -63,8 +63,8 @@ dependencies = [
     "typing-extensions>=4.4.0",
 ]
 files = [
-    {file = "blackjax-1.1.0-py3-none-any.whl", hash = "sha256:25c9a40c93daf9456bcee68c3178e66e9233acf9931049498ec3077a7e713c3f"},
-    {file = "blackjax-1.1.0.tar.gz", hash = "sha256:9d408113759dc7b8a396519abb9fd43d998c864fd3d6cefdc3464b3dfef99093"},
+    {file = "blackjax-1.1.1-py3-none-any.whl", hash = "sha256:b601c19af2d2562a023946262af8317d0ad3f0290eb7cde0530b09cbca54504f"},
+    {file = "blackjax-1.1.1.tar.gz", hash = "sha256:cdba2f87463f77ef70f26853e697de10ac2d67b0971417ffaa911256a023ac3d"},
 ]
 
 [[package]]
@@ -175,18 +175,19 @@ files = [
 
 [[package]]
 name = "cuda-python"
-version = "12.3.0"
+version = "12.4.0"
 summary = "Python bindings for CUDA"
 groups = ["default"]
 files = [
-    {file = "cuda_python-12.3.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:45285ec0f0dc4fe604b3568e77ba3363d3ce531ac9f9a5510d2276ad46ef143f"},
-    {file = "cuda_python-12.3.0-cp310-cp310-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:a6f666d01e573454cbd38495911fe25686849e5996f140d9b756f02f93e19e43"},
-    {file = "cuda_python-12.3.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7560ea424044420a2762559832e392e48317889db62c5da7e8957b1907996d32"},
-    {file = "cuda_python-12.3.0-cp310-cp310-win_amd64.whl", hash = "sha256:02f392dbb320731cf89a02a2540db84e4beb27f900d4128e407c33d20adc7c8e"},
-    {file = "cuda_python-12.3.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0f4784d5f9cbf7239d00e8abcad56bf9130c0274ac20976a0e5c71d02324a42b"},
-    {file = "cuda_python-12.3.0-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:c02922b14f12aeae9388aef4d0f633bde5225a818a0bfc9cade61bcf7a65e69c"},
-    {file = "cuda_python-12.3.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0a27dd9cb84000e3812d797de631fefcff5470ddfc30f4110aba1eccf8c32f68"},
-    {file = "cuda_python-12.3.0-cp311-cp311-win_amd64.whl", hash = "sha256:01579e5cf7959e7759e2f23232e2e53167c1cf2461b0ba73a3c2cb03602d54af"},
+    {file = "cuda_python-12.4.0-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:3a9ddcbfe14a9b38eedf7e98323f680acc8c61ed6529638da2c7d4a5a8787e12"},
+    {file = "cuda_python-12.4.0-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d9e1a2cf38d71be0c85f1063967409b48badc06fb4294dd72fdf05de852f42fb"},
+    {file = "cuda_python-12.4.0-cp310-cp310-win_amd64.whl", hash = "sha256:8d505667cae5f793435dbe5fcaab4bff4a2a3029024148ce16e4003bae43cf45"},
+    {file = "cuda_python-12.4.0-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e845338ad9634be2778b787f12f3a05b0116d49610a9a517f017fd91e79b1b97"},
+    {file = "cuda_python-12.4.0-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:6dde31841f204f3de78e5e121252f7c43f1cfcf207ff3a0cf1d1017acb08dabf"},
+    {file = "cuda_python-12.4.0-cp311-cp311-win_amd64.whl", hash = "sha256:43d92a8f7531c5fa8d9d68e24b36dd352d1653353791583c4a3b10a629176fd4"},
+    {file = "cuda_python-12.4.0-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:84cd4f3a174fc116a6c1496efb3d60a7d4dce791194456461582908653ac67b2"},
+    {file = "cuda_python-12.4.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:dcf44462196af79e34d2516f4416c5e46691a4d6b9faa13e75664115bdc40d4c"},
+    {file = "cuda_python-12.4.0-cp312-cp312-win_amd64.whl", hash = "sha256:07db8b89ac34ba4520b070f8de971f0266229fabe2443608ca91a8b93d572c09"},
 ]
 
 [[package]]
@@ -400,7 +401,7 @@ files = [
 
 [[package]]
 name = "jax"
-version = "0.4.24"
+version = "0.4.25"
 requires_python = ">=3.9"
 summary = "Differentiate, compile, and transform Numpy code."
 groups = ["default"]
@@ -414,8 +415,8 @@ dependencies = [
     "scipy>=1.9",
 ]
 files = [
-    {file = "jax-0.4.24-py3-none-any.whl", hash = "sha256:4ff1cde9585c95d00b397e20d53680d13d951df7248ec7136d13b4e2000348b6"},
-    {file = "jax-0.4.24.tar.gz", hash = "sha256:4a6b6fd026ddd22653c7fa2fac1904c3de2dbe845b61ede08af9a5cc709662ae"},
+    {file = "jax-0.4.25-py3-none-any.whl", hash = "sha256:8158c837e5ecc195074b421609e85329a962785b36f9fe5ff53e844e8ad87dbc"},
+    {file = "jax-0.4.25.tar.gz", hash = "sha256:a8ee189c782de2b7b2ffb64a8916da380b882a617e2769aa429b71d79747b982"},
 ]
 
 [[package]]
@@ -436,33 +437,33 @@ files = [
 
 [[package]]
 name = "jax"
-version = "0.4.24"
+version = "0.4.25"
 extras = ["cuda12_pip"]
 requires_python = ">=3.9"
 summary = "Differentiate, compile, and transform Numpy code."
 groups = ["default"]
 dependencies = [
-    "jax==0.4.24",
-    "jaxlib==0.4.24+cuda12.cudnn89",
-    "nvidia-cublas-cu12>=12.2.5.6",
-    "nvidia-cuda-cupti-cu12>=12.2.142",
-    "nvidia-cuda-nvcc-cu12>=12.2.140",
-    "nvidia-cuda-runtime-cu12>=12.2.140",
-    "nvidia-cudnn-cu12>=8.9",
-    "nvidia-cufft-cu12>=11.0.8.103",
-    "nvidia-cusolver-cu12>=11.5.2",
-    "nvidia-cusparse-cu12>=12.1.2.141",
+    "jax==0.4.25",
+    "jaxlib==0.4.25+cuda12.cudnn89",
+    "nvidia-cublas-cu12>=12.3.4.1",
+    "nvidia-cuda-cupti-cu12>=12.3.101",
+    "nvidia-cuda-nvcc-cu12>=12.3.107",
+    "nvidia-cuda-runtime-cu12>=12.3.101",
+    "nvidia-cudnn-cu12>=8.9.7.29",
+    "nvidia-cufft-cu12>=11.0.12.1",
+    "nvidia-cusolver-cu12>=11.5.4.101",
+    "nvidia-cusparse-cu12>=12.2.0.103",
     "nvidia-nccl-cu12>=2.19.3",
-    "nvidia-nvjitlink-cu12>=12.2",
+    "nvidia-nvjitlink-cu12>=12.3.101",
 ]
 files = [
-    {file = "jax-0.4.24-py3-none-any.whl", hash = "sha256:4ff1cde9585c95d00b397e20d53680d13d951df7248ec7136d13b4e2000348b6"},
-    {file = "jax-0.4.24.tar.gz", hash = "sha256:4a6b6fd026ddd22653c7fa2fac1904c3de2dbe845b61ede08af9a5cc709662ae"},
+    {file = "jax-0.4.25-py3-none-any.whl", hash = "sha256:8158c837e5ecc195074b421609e85329a962785b36f9fe5ff53e844e8ad87dbc"},
+    {file = "jax-0.4.25.tar.gz", hash = "sha256:a8ee189c782de2b7b2ffb64a8916da380b882a617e2769aa429b71d79747b982"},
 ]
 
 [[package]]
 name = "jaxlib"
-version = "0.4.24"
+version = "0.4.25+cuda12.cudnn89"
 requires_python = ">=3.9"
 summary = "XLA library for JAX"
 groups = ["default"]
@@ -473,12 +474,12 @@ dependencies = [
     "scipy>=1.9",
 ]
 files = [
-    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:159e5da6797c4ff9ac6d7c7c8c64bba1338856200a9bb4a25a2d8b2da5c004f1"},
-    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:4028eb39ccc3da6a7e083c155c1734ff8ac99c08b3795eb600ad03a71f57e931"},
-    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:7bfe74895a947a46bd3aa571abeab1612eb23e3d6c47ba71254e8b265ccbedf2"},
-    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:229cb7be4d72529969373102005b7adda3888601168171bb864a1e4c893d6d04"},
-    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:8e5b361a497eb9665b3a94cdecb454862b70e803fb8f158a0187091b81f2ddaf"},
-    {file = "jaxlib-0.4.24+cuda12.cudnn89-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:2d29d91da5206bff19eb988a5d6067643938c94a4dca4153bb7bee9027213ba4"},
+    {file = "jaxlib-0.4.25+cuda12.cudnn89-cp310-cp310-manylinux2014_aarch64.whl", hash = "sha256:f2d162ce1aee92b4c98c9f18a87ba953616ee1a85b5137e4499367d5f7a92d18"},
+    {file = "jaxlib-0.4.25+cuda12.cudnn89-cp310-cp310-manylinux2014_x86_64.whl", hash = "sha256:c782b79314d7c7046c5834663902e703f3338ab97c86f698d54ba34ef89543d8"},
+    {file = "jaxlib-0.4.25+cuda12.cudnn89-cp311-cp311-manylinux2014_aarch64.whl", hash = "sha256:d9cf51dac8a334e74fe9c91ab833696325f027132b931c1347d6c2dfac33994e"},
+    {file = "jaxlib-0.4.25+cuda12.cudnn89-cp311-cp311-manylinux2014_x86_64.whl", hash = "sha256:59eb28feb28b4709f760d42c51fef2119d7ef7814eddd9266860138134b6c552"},
+    {file = "jaxlib-0.4.25+cuda12.cudnn89-cp312-cp312-manylinux2014_aarch64.whl", hash = "sha256:4a76cc71a71faef9a0898f95dd93973517b7c944d11f38b4cf26b99b2ca343d9"},
+    {file = "jaxlib-0.4.25+cuda12.cudnn89-cp312-cp312-manylinux2014_x86_64.whl", hash = "sha256:f466a534a9a0811d9dbce696a570775be9c8cceac1495fd2d8678a0f7425970c"},
 ]
 
 [[package]]
@@ -499,18 +500,17 @@ files = [
 
 [[package]]
 name = "jaxtyping"
-version = "0.2.25"
+version = "0.2.27"
 requires_python = "~=3.9"
 summary = "Type annotations and runtime checking for shape and dtype of JAX arrays, and PyTrees."
 groups = ["default"]
 dependencies = [
     "numpy>=1.20.0",
-    "typeguard<3,>=2.13.3",
-    "typing-extensions>=3.7.4.1",
+    "typeguard==2.13.3",
 ]
 files = [
-    {file = "jaxtyping-0.2.25-py3-none-any.whl", hash = "sha256:503772cf985ff50bd160d0661266e1628da47cc8b9a302de16f230e07f5ac119"},
-    {file = "jaxtyping-0.2.25.tar.gz", hash = "sha256:4ec4bdb6839a67c062e48c27d62d44bf353099d7ff6cd3628b5a511c097ab922"},
+    {file = "jaxtyping-0.2.27-py3-none-any.whl", hash = "sha256:a8eafc92106887e5d8e1ce148d5b236afaf2ee63f2b5bca3adb78aa08ae674ab"},
+    {file = "jaxtyping-0.2.27.tar.gz", hash = "sha256:4bfa972aefe24b246499eba6a63dec3aded1e8ba3b5b07d498408d08995e78a1"},
 ]
 
 [[package]]
@@ -838,13 +838,13 @@ files = [
 
 [[package]]
 name = "nvidia-cuda-nvrtc-cu12"
-version = "12.3.107"
+version = "12.4.99"
 requires_python = ">=3"
 summary = "NVRTC native runtime libraries"
 groups = ["default"]
 files = [
-    {file = "nvidia_cuda_nvrtc_cu12-12.3.107-py3-none-manylinux1_x86_64.whl", hash = "sha256:4db66788a37a234304a0b3203744f9a6c665f48bde65f69a096ae3b5799b5b1d"},
-    {file = "nvidia_cuda_nvrtc_cu12-12.3.107-py3-none-win_amd64.whl", hash = "sha256:048f0526521bcff2e8fda76d3f0b5284a24065f96096ad3f8f300ad970d7eae0"},
+    {file = "nvidia_cuda_nvrtc_cu12-12.4.99-py3-none-manylinux2014_x86_64.whl", hash = "sha256:0f488eb03e10bd1551bae75bdc1ca8771218889a0b9746a00c97e5a2ec8bbd3e"},
+    {file = "nvidia_cuda_nvrtc_cu12-12.4.99-py3-none-win_amd64.whl", hash = "sha256:0d4f0b6bd29176d11f3dcd68075e64082e5bb8af56314c5021a4ec57daf22cf4"},
 ]
 
 [[package]]
@@ -951,7 +951,7 @@ files = [
 
 [[package]]
 name = "optax"
-version = "0.1.9"
+version = "0.2.0"
 requires_python = ">=3.9"
 summary = "A gradient processing and optimisation library in JAX."
 groups = ["default"]
@@ -963,8 +963,8 @@ dependencies = [
     "numpy>=1.18.0",
 ]
 files = [
-    {file = "optax-0.1.9-py3-none-any.whl", hash = "sha256:3cbcfac6e70dff9484cd7560dc92e43a50df1eac0d4af2a1f7c2e1fd116bf972"},
-    {file = "optax-0.1.9.tar.gz", hash = "sha256:731f43e8b404f50a5ef025b1261894d7d0300f7ad9cb688ea08f67b40822e94f"},
+    {file = "optax-0.2.0-py3-none-any.whl", hash = "sha256:68673a95b8a18231b86879e317281869c005ef11a901209aaf25aee30be079cf"},
+    {file = "optax-0.2.0.tar.gz", hash = "sha256:344cb84e6c24f18ee03c9973795978321112a4f5d3600d1fab4dbf7757b90449"},
 ]
 
 [[package]]
@@ -1171,7 +1171,7 @@ files = [
 
 [[package]]
 name = "pytest"
-version = "8.0.1"
+version = "8.0.2"
 requires_python = ">=3.8"
 summary = "pytest: simple powerful testing with Python"
 groups = ["dev"]
@@ -1184,8 +1184,8 @@ dependencies = [
     "tomli>=1.0.0; python_version < \"3.11\"",
 ]
 files = [
-    {file = "pytest-8.0.1-py3-none-any.whl", hash = "sha256:3e4f16fe1c0a9dc9d9389161c127c3edc5d810c38d6793042fb81d9f48a59fca"},
-    {file = "pytest-8.0.1.tar.gz", hash = "sha256:267f6563751877d772019b13aacbe4e860d73fe8f651f28112e9ac37de7513ae"},
+    {file = "pytest-8.0.2-py3-none-any.whl", hash = "sha256:edfaaef32ce5172d5466b5127b42e0d6d35ebbe4453f0e3505d96afd93f6b096"},
+    {file = "pytest-8.0.2.tar.gz", hash = "sha256:d4051d623a2e0b7e51960ba963193b09ce6daeb9759a451844a21e4ddedfc1bd"},
 ]
 
 [[package]]
