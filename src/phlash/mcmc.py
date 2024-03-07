@@ -9,11 +9,12 @@ from jax import vmap
 from jax.flatten_util import ravel_pytree
 from loguru import logger
 
+from phlash.afs import fold_transform
 from phlash.data import Contig, init_mcmc_data
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
-from phlash.util import Pattern, project_afs, tree_unstack
+from phlash.util import Pattern, tree_unstack
 
 
 def _check_jax_gpu():
@@ -94,20 +95,15 @@ def fit(
         mutation_rate = options["truth"].theta
     # if the elpd does not improve for this many iterations, exit the training loop
     elpd_cutoff = options.get("elpd_cutoff", 100)
-    # If true, use the folded afs for inference
-    fold_afs = options.get("fold_afs", True)
-
-    # If not None, downsample the afs to this sample size
-    if options.get("downsample_afs"):
-        m = options["downsample_afs"]
-
-        def downsample_afs(afs):
-            return project_afs(afs, m)
-
+    # The user can specify an arbitrary linear transform for the afs--this allows things
+    # like binning and/or folding the AFS. The transform needs to act like a stochastic
+    # matrix (though not necessarily square) -- it must send probability distributions
+    # to other probability distributions, potentially in a lower-dimensional space.
+    if options.get("afs_transform"):
+        afs_transform = options["afs_transform"]
     else:
-
-        def downsample_afs(afs):
-            return afs
+        # by default, fold the afs
+        afs_transform = fold_transform(len(afs) + 1)
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -226,8 +222,8 @@ def fit(
                     inds=jnp.arange(N_test),
                     kern=test_kern,
                     warmup=jnp.full([N_test, 1], -1, dtype=jnp.int8),
-                    afs=downsample_afs(test_afs),
-                    use_folded_afs=fold_afs,
+                    afs=test_afs,
+                    afs_transform=afs_transform,
                 )
 
             return _elpd_ll(mcps).mean()
@@ -237,8 +233,8 @@ def fit(
     kw = dict(
         kern=train_kern,
         c=jnp.array([1.0, N / S, 1.0]),
-        afs=downsample_afs(afs),
-        use_folded_afs=fold_afs,
+        afs=afs,
+        afs_transform=afs_transform,
     )
 
     # build the plot callback

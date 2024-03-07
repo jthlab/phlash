@@ -2,11 +2,11 @@ import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 from jax import vmap
-from jaxtyping import Array, Float64, Int8, Int64
+from jax.scipy.special import xlogy
+from jaxtyping import Array, Float, Float64, Int8, Int64
 
 import phlash.hmm
 from phlash.params import MCMCParams, PSMCParams
-from phlash.util import fold_afs
 
 
 def log_prior(mcp: MCMCParams) -> float:
@@ -35,7 +35,7 @@ def log_density(
     warmup: Int8[Array, "c ell"],
     kern: "phlash.gpu.PSMCKernel",
     afs: Int64[Array, "n"],
-    use_folded_afs: bool,
+    afs_transform: Float[Array, "m n"] = None,
 ) -> float:
     r"""
     Computes the log density of a statistical model by combining the contributions from
@@ -64,15 +64,15 @@ def log_density(
     l2 = vmap(kern.loglik, (0, 0))(pps, inds).sum()
     if afs is not None:
         n = len(afs) + 1
+        if afs_transform is None:
+            T = jnp.eye(n - 1)
+        else:
+            T = afs_transform
+        assert T.ndim == 2
+        assert T.shape[1] == n - 1
         etbl = dm.eta.etbl(n)
         esfs = etbl / etbl.sum()
-        f_afs, f_esfs = map(fold_afs, (afs, esfs))
-        l3 = jnp.where(
-            use_folded_afs,
-            jax.scipy.special.xlogy(f_afs, f_esfs).sum(),
-            jax.scipy.special.xlogy(afs, esfs).sum(),
-        )
-
+        l3 = xlogy(T @ afs, T @ esfs).sum()
     else:
         l3 = 0.0
     ll = jnp.array([l1, l2, l3])
