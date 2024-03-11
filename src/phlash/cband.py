@@ -106,7 +106,7 @@ def _find_confidence_bands(
     # Objective function
     prob += pl.lpSum([u[k] - ell[k] for k in range(K)])
 
-    M = 10 * (A.max() - A.min() + 1)
+    M = A.max() - A.min() + 1
 
     # Adding constraints
     for i in range(N):
