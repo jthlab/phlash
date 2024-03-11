@@ -264,7 +264,7 @@ def fit(
         return ret
 
     ema = best_elpd = None
-    a = 0
+    a = 0  # tracks the number of iterations since the elpd went up
     global _particles  # for debugging
     with tqdm.trange(
         niter, disable=not options.get("progress", True), desc="Fitting model"
