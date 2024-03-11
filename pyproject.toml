@@ -32,6 +32,11 @@ requires-python = ">=3.10,<4.0"
 readme = "README.md"
 license = {text = "MIT"}
 
+[project.urls]
+"Homepage" = "https://github.com/jthlab/phlash"
+"Bug Reports" = "https://github.com/jthlab/phlash/issues"
+"Source" = "https://github.com/jthlab/phlash/"
+
 [project.optional-dependencies]
 webui = [
     "jupyter>=1.0.0",
