@@ -139,6 +139,9 @@ def fit(
     # watterson's estimator of the mutation rate
     ch0 = chunks[:, overlap:]
     watterson = ch0[ch0 > -1].mean() / window_size
+    # User can override theta if they want -- mainly useful for getting aligned
+    # beginning/end time points across different populations.
+    watterson = options.get("theta", watterson)
     # although we could work in the per-generation scaling if 'mutation_rate' is passed,
     # it seems to be numerically better (estimates are more accurate) to work in the
     # coalescent scaling. perhaps because all the calculations are "O(1)" instead of
@@ -147,7 +150,7 @@ def fit(
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
         if mutation_rate is not None:
-            N0 = watterson / 4 / mutation_rate
+            N0 = theta / mutation_rate
             options.setdefault("t1", 1e1 / 2 / N0)
             options.setdefault("tM", 1e6 / 2 / N0)
         t1 = options.get("t1", 1e-4)
