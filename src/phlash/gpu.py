@@ -120,15 +120,6 @@ class _PSMCKernelBase:
             ) from e
         (err,) = cuda.cuMemcpyHtoD(self._data_gpu, data, data.nbytes)
         ASSERT_DRV(err)
-        a = data[:, ::-1] == -1
-        end_j = self._L - np.argmax(a, 1) - 1
-        # 1 + end because the command returns closed intervals (inclusive of endpoints)
-        L_max = self._L_max = np.ascontiguousarray(1 + end_j).astype(np.int64)
-        assert L_max.shape == (self._N,)
-        err, self._L_max_gpu = cuda.cuMemAlloc(L_max.nbytes)
-        ASSERT_DRV(err)
-        (err,) = cuda.cuMemcpyHtoD(self._L_max_gpu, L_max, L_max.nbytes)
-        ASSERT_DRV(err)
         # some more checks
         if M != 16:
             warnings.warn("Performance is optimized when M=16")
@@ -166,7 +157,6 @@ class _PSMCKernelBase:
             ASSERT_DRV(err)
         for a in (
             "_data_gpu",
-            "_L_max_gpu",
             "_inds_gpu",
             "_pa_gpu",
             "_ll_gpu",
@@ -248,14 +238,13 @@ class _PSMCKernelBase:
         (err,) = cuda.cuMemcpyHtoDAsync(self._ll_gpu, ll, ll.nbytes, self._stream)
         arg_values = (
             self._data_gpu,
-            self._L_max_gpu,
             np.int64(self._L),
             np.int64(N),
             self._inds_gpu,
             self._pa_gpu,
             self._ll_gpu,
         )
-        arg_types = (None, None, ctypes.c_int64, ctypes.c_int64, None, None, None)
+        arg_types = (None, ctypes.c_int64, ctypes.c_int64, None, None, None)
         if grad:
             f = self._f["loglik_grad"]
             (err,) = cuda.cuMemcpyHtoDAsync(
@@ -533,7 +522,6 @@ extern "C"
 __global__ void
 // log-likelihood function without gradient
 loglik(int8_t const *datag,
-       const int64_t *L_max,
        const int64_t L,
        const int64_t N,
        const int64_t *inds,
@@ -562,8 +550,7 @@ loglik(int8_t const *datag,
     const int8_t *data = &datag[inds[s] * L];
     int8_t ob;
     int64_t ell;
-    const int64_t Lm = L_max[inds[s]];
-    for (ell = 0; ell < Lm; ell++) {
+    for (ell = 0; ell < L; ell++) {
         matvec(h, p);
         ob = data[ell];
         c = 0.;
@@ -582,7 +569,6 @@ __global__ void
 __launch_bounds__(7 * M)
 // value and gradient of the log-likelihood function
 loglik_grad(int8_t const *datag,
-          const int64_t *L_max,
           const int64_t L,
           const int64_t N,
           const int64_t *inds,
@@ -639,8 +625,7 @@ loglik_grad(int8_t const *datag,
     int64_t ell;
     c = 0.;
     __syncthreads();
-    const int64_t Lm = L_max[inds[s]];
-    for (ell = 0; ell < Lm; ell++) {
+    for (ell = 0; ell < L; ell++) {
         // read chunks of the data from coalesced global memory
         ob = data[ell];
         // update each derivative matrix
