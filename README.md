@@ -33,6 +33,8 @@ $ python3 -mvenv /path/to/phlash  # replace with desired path
 $ source /path/to/phlash/bin/activate
 $ pip3 install -U pip setuptools  # recent version of pip and setuptools are required
 ```
+## Running the program
+See [notebooks/example.md](notebooks/example.md) for example code and usage instructions.
 
 ## Troubleshooting / FAQ
 
