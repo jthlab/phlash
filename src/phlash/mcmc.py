@@ -79,8 +79,12 @@ def fit(
     # the size of each "chunk", see manuscript. this is estimated from data.
     chunk_size = options.get("chunk_size")
     max_samples = options.get("max_samples", 20)
-    # the number of parallel workers
+
+    # data loading routines. this can take a little while.
+    # the number of parallel workers. by default, use all cores, but this can take up
+    # too much memory. set num_workers=1 to process the data sequentially.
     num_workers = options.get("num_workers")
+    logger.info("Loading data")
     afs, chunks = init_mcmc_data(
         data, window_size, overlap, chunk_size, max_samples, num_workers
     )

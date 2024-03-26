@@ -2,7 +2,7 @@
 
 import re
 from abc import ABC, abstractmethod
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
@@ -14,6 +14,8 @@ import tszip
 from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
+
+from phlash.mp import JaxCpuProcessPoolExecutor
 
 
 class ChunkedContig(NamedTuple):
@@ -472,7 +474,7 @@ def init_mcmc_data(
         )
     chunks = []
     total_size = sum(ds.size for ds in data if ds.size)
-    with ThreadPoolExecutor(num_workers) as pool:
+    with JaxCpuProcessPoolExecutor(num_workers) as pool:
         futs = {}
         for i, ds in enumerate(data):
             fut = pool.submit(
@@ -486,7 +488,7 @@ def init_mcmc_data(
             for f in as_completed(futs):
                 i = futs[f]
                 size = data[i].size
-                data[i] = None  # free memory associated with dataset
+                # data[i] = None  # free memory associated with dataset
                 if size:
                     pbar.update(size)
                 d = f.result()
