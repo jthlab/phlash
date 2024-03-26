@@ -137,6 +137,15 @@ class SizeHistory(NamedTuple):
         return jnp.concatenate([1.0 - Ci.sum(keepdims=True), Ci])
 
     def __call__(self, x: float, Ne: bool = False) -> float:
+        """Evaluate this function at the points x.
+
+        Args:
+            x: vector of points at which to evaluate eta.
+            Ne: If False, return eta(x). If True, return 1 / (2 * eta(x)).
+
+        Returns:
+            The function value at each point x.
+        """
         i = jnp.searchsorted(jnp.append(self.t, jnp.inf), x, "right") - 1
         if Ne:
             return 1.0 / 2.0 / self.c[i]
