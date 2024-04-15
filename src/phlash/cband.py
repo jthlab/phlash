@@ -86,8 +86,6 @@ def _find_confidence_bands(
     # most users don't need to see
     import pulp as pl
 
-    if solver is None:
-        solver = pl.GUROBI()
     N, K = A.shape
     if t.shape != (K,):
         raise ValueError("A and t have incompatible shapes")
