@@ -4,9 +4,10 @@ import tempfile
 
 import msprime
 import numpy as np
+import pytest
 from pytest import fixture
 
-from phlash.data import TreeSequenceContig, VcfContig, _chunk_het_matrix
+from phlash.data import RawContig, TreeSequenceContig, VcfContig, _chunk_het_matrix
 
 
 @fixture
@@ -25,6 +26,18 @@ def test_chunk(rng):
         q = min(chunk_size + overlap, len(H[0, b:]))
         assert np.all(ch_i[:q] == H[0, b : b + q])
         b += chunk_size
+
+
+def test_psmcfa():
+    fn = os.path.join(os.path.dirname(__file__), "fixtures", "sample.psmcfa")
+    for contig in "1", 0:
+        # allow passing by string name or index
+        rc = RawContig.from_psmcfa(fn, contig, 100)
+        assert rc.het_matrix.shape == (1, 100)
+        assert rc.het_matrix.sum() == 82
+        assert rc.window_size == 100
+    with pytest.raises(ValueError):
+        rc = RawContig.from_psmcfa(fn, "2", 100)
 
 
 def test_vcf():

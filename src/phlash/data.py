@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
 import cyvcf2
+import dinopy
 import numpy as np
 import tqdm.auto as tqdm
 import tskit
@@ -117,6 +118,35 @@ class RawContig(Contig):
     het_matrix: Int8[Array, "N L"]
     afs: Int[Array, "n"]
     window_size: int
+
+    @classmethod
+    def from_psmcfa(
+        cls, psmcfa_path: str, contig: str, window_size: int
+    ) -> "RawContig":
+        """Construct a contig from a PSMC FASTA (.psmcfa) file.
+
+        Args:
+            psmcfa_path: The path to the .psmcfa file.
+            contig: The name of the contig to read in.
+            window_size: The size of the window that was used when binning entries
+                to construct the FASTA file.
+
+        Notes:
+            The `window_size` parameter corresponds to the `-s` option that was passed
+            to the `fq2psmcfa` utility when creating the .psmcfa file, and is usually
+            set to 100bp.
+        """
+        # parse psmcfa file
+        far = dinopy.FastaReader(psmcfa_path)
+        try:
+            c = next(far.chromosomes(contig))
+        except StopIteration:
+            raise ValueError(f"A contig named {contig} was not found in {psmcfa_path}")
+        seq = np.frombuffer(c.sequence, dtype="c")
+        data = (seq == b"K").astype(np.uint8)
+        (L,) = data.shape
+        afs = np.ones(1)
+        return cls(het_matrix=data[None], afs=afs, window_size=window_size)
 
     @property
     def N(self):
