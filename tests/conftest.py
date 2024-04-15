@@ -2,7 +2,7 @@ import jax
 import numpy as np
 from pytest import fixture
 
-from phlash.gpu import PSMCKernel
+from phlash.kernel import get_kernel
 from phlash.params import PSMCParams
 from phlash.size_history import DemographicModel
 
@@ -31,4 +31,4 @@ def pp(dm) -> PSMCParams:
 
 @fixture
 def kern(data):
-    return PSMCKernel(M=16, data=data, double_precision=True)
+    return get_kernel(M=16, data=data, double_precision=True)

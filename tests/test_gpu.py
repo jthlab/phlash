@@ -3,8 +3,8 @@ import jax.test_util
 import numpy as np
 from pytest import fixture
 
-from phlash.gpu import PSMCKernel
 from phlash.hmm import psmc_ll
+from phlash.kernel import get_kernel
 from phlash.params import PSMCParams
 
 jax.config.update("jax_enable_x64", True)
@@ -42,7 +42,7 @@ def test_pyll_vs_cuda(dm, data, kern):
 
 
 def test_pyll_vs_cuda_missing(dm, missing_data):
-    kern = PSMCKernel(M=16, data=missing_data, double_precision=True)
+    kern = get_kernel(M=16, data=missing_data, double_precision=True)
     ll1 = kern.loglik(dm, 0)
     ll2 = psmc_ll(dm, missing_data[0])[1]
     np.testing.assert_allclose(ll1, ll2, rtol=1e-4)

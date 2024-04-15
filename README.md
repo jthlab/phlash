@@ -6,6 +6,9 @@ modern interface and GPU acceleration built in.
 ## Requirements
 
 - Python 3.10 or greater.
+
+Optional but _highly recommended_:
+
 - An NVIDIA GPU. Any relatively recent model should work. phlash has been tested on:
     - RTX 4090
     - A40
@@ -14,15 +17,20 @@ modern interface and GPU acceleration built in.
 
 ## Installation
 
-phlash can be installed from PyPI using pip, however the usual `pip install phlash`
-will fail because of dependence on CUDA and Jax packages which are not published on
-PyPI. Instead, you must run:
+phlash can be installed from PyPI using pip:
+
+```
+$ pip install phlash
+```
+
+If your machine contains an Nvidia GPU, you should install the `gpu` variant in order to enable it.
+In this case, you should run:
 
 ```
 $ pip install \
     -f "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html" \
     --extra-index-url "https://pypi.ngc.nvidia.com" \
-    phlash
+    phlash[gpu]
 ```
 
 I recommend installing phlash into a separate virtual environment: before running the

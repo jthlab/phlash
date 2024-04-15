@@ -11,6 +11,7 @@ from loguru import logger
 
 from phlash.afs import bws_transform, fold_transform
 from phlash.data import Contig, init_mcmc_data
+from phlash.kernel import get_kernel
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
@@ -199,11 +200,8 @@ def fit(
     # the warmup chunks and data chunks are analyzed differently; the data chunks load
     # onto the GPU whereas the warmup chunks are processed by native jax.
     warmup_chunks, data_chunks = np.split(chunks, [overlap], axis=1)
-    # defer loading the gpu module until necessary, to keep from having to initialize
-    # CUDA on overall package load.
-    from phlash.gpu import PSMCKernel
 
-    train_kern = PSMCKernel(
+    train_kern = get_kernel(
         M=M,
         data=np.ascontiguousarray(data_chunks),
         double_precision=options.get("double_precision", False),
@@ -216,7 +214,7 @@ def fit(
         test_afs = d["afs"]
         test_data = d["het_matrix"][:max_samples]
         N_test = test_data.shape[0]
-        test_kern = PSMCKernel(
+        test_kern = get_kernel(
             M=M,
             data=np.ascontiguousarray(d["het_matrix"]),
             double_precision=False,
