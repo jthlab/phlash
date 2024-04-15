@@ -74,7 +74,7 @@ class MCMCParams:
         theta: float,
         rho: float,
         alpha: float = 0.0,
-        beta: float = 1e-3,
+        beta: float = 0.0,
     ) -> "MCMCParams":
         dtM = tM - t1
         t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])

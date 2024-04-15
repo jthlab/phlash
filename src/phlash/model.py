@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
 from jax import vmap
 from jax.scipy.special import xlogy
 from jaxtyping import Array, Float, Float64, Int8, Int64
@@ -10,7 +9,6 @@ from phlash.params import MCMCParams, PSMCParams
 
 
 def log_prior(mcp: MCMCParams) -> float:
-    dm = mcp.to_dm()
     ret = sum(
         jax.scipy.stats.norm.logpdf(a, loc=mu, scale=sigma).sum()
         for (a, mu, sigma) in [
@@ -19,12 +17,7 @@ def log_prior(mcp: MCMCParams) -> float:
     )
     ret -= mcp.alpha * jnp.sum(jnp.diff(mcp.log_c) ** 2)
     x, _ = jax.flatten_util.ravel_pytree(mcp)
-    # ret -= mcp.beta * x.dot(x)
-    pi = jnp.maximum(1e-8, dm.eta.pi)
-    # (lack of) entropy penalty
-    H = -jsp.special.xlogy(pi, pi).sum()
-    # jax.debug.print("pi={} H={}", pi, H)
-    ret += H
+    ret -= mcp.beta * x.dot(x)
     return ret
 
 
