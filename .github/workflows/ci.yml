@@ -27,36 +27,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  prepare:
-    runs-on: ubuntu-latest
-    outputs:
-      wheel-distribution: ${{ steps.wheel-distribution.outputs.path }}
-    steps:
-      - uses: actions/checkout@v3
-        with: {fetch-depth: 0}  # deep clone for setuptools-scm
-      - uses: actions/setup-python@v4
-        id: setup-python
-        with: {python-version: "3.11"}
-      - name: Run static analysis and format checkers
-        run: pipx run pre-commit run --all-files --show-diff-on-failure
-      - name: Build package distribution files
-        run: >-
-          pipx run --python '${{ steps.setup-python.outputs.python-path }}'
-          tox -e clean,build
-      - name: Record the path of wheel distribution
-        id: wheel-distribution
-        run: echo "path=$(ls dist/*.whl)" >> $GITHUB_OUTPUT
-      - name: Store the distribution files for use in other stages
-        # `tests` and `publish` will use the same pre-built distributions,
-        # so we make sure to release the exact same package that was tested
-        uses: actions/upload-artifact@v3
-        with:
-          name: python-distribution-files
-          path: dist/
-          retention-days: 1
-
   test:
-    needs: prepare
     strategy:
       matrix:
         python:
@@ -66,28 +37,14 @@ jobs:
         - ubuntu-latest
     runs-on: [self-hosted, linux, x64, gpu]
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-        id: setup-python
-        with:
-          python-version: ${{ matrix.python }}
-      - name: Retrieve pre-built distribution files
-        uses: actions/download-artifact@v3
-        with: {name: python-distribution-files, path: dist/}
+      - name: Setup PDM
+        uses: pdm-project/setup-pdm@v4
+      # You are now able to use PDM in your workflow
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: pdm install -d
       - name: Run tests
-        run: >-
-          pipx run --python '${{ steps.setup-python.outputs.python-path }}'
-          tox --installpkg '${{ needs.prepare.outputs.wheel-distribution }}'
-          -- -rFEx --durations 10 --color yes  # pytest args
-      - name: Generate coverage report
-        run: pipx run coverage lcov -o coverage.lcov
-      - name: Upload partial coverage report
-        uses: coverallsapp/github-action@master
-        with:
-          path-to-lcov: coverage.lcov
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          flag-name: ${{ matrix.platform }} - py${{ matrix.python }}
-          parallel: true
+        run: pdm run py.test
 
   finalize:
     needs: test
