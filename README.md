@@ -23,18 +23,13 @@ phlash can be installed from PyPI using pip:
 $ pip install phlash
 ```
 
-If your machine contains an Nvidia GPU, you should install the `gpu` variant in order to enable it.
-In this case, you should run:
+If your machine contains an Nvidia GPU, you should be sure to install the `gpu` variant in order to enable it:
 
 ```
-$ pip install \
-    -f "https://storage.googleapis.com/jax-releases/jax_cuda_releases.html" \
-    --extra-index-url "https://pypi.ngc.nvidia.com" \
-    phlash[gpu]
+$ pip install 'phlash[gpu]'
 ```
 
-I recommend installing phlash into a separate virtual environment: before running the
-above, do
+I recommend installing phlash into a separate virtual environment: before running the above, do
 
 ```
 $ python3 -mvenv /path/to/phlash  # replace with desired path
