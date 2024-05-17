@@ -15,7 +15,7 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, macos-latest-large]
     steps:
     - uses: actions/checkout@v3
     - name: Set up Python 3.10
