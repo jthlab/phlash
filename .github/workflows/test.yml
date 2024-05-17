@@ -15,9 +15,18 @@ permissions:
 
 jobs:
   test:
-    runs-on: [ubuntu-latest, macos-latest-large]
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.runner }}
     steps:
     - uses: actions/checkout@v3
+    - name: Install GSL on macOS
+      if: matrix.runner == 'macos-latest'
+      run: |
+        brew update
+        brew install gsl
     - name: Set up Python 3.10
       uses: actions/setup-python@v3
       with:
