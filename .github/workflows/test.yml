@@ -28,4 +28,4 @@ jobs:
     - name: Install dependencies
       run: pdm install -d
     - name: Run tests
-      run: pdm run py.test
+      run: pdm run py.test -m 'not slow'

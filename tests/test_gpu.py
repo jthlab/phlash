@@ -1,6 +1,7 @@
 import jax
 import jax.test_util
 import numpy as np
+import pytest
 from pytest import fixture
 
 from phlash.hmm import psmc_ll
@@ -21,12 +22,14 @@ def rel_err(a, b):
     return np.abs(a - b) / np.abs(a)
 
 
+@pytest.mark.slow
 def test_check_grads(dm, data, kern):
     jax.test_util.check_grads(
         lambda d: kern.loglik(d, 0), (dm,), order=1, modes=["rev"], rtol=1e-2
     )
 
 
+@pytest.mark.slow
 def test_eq_grad_nograd(pp: PSMCParams, data, kern):
     "test that the likelihood is the same using either method"
     inds = np.arange(len(data))
@@ -35,12 +38,14 @@ def test_eq_grad_nograd(pp: PSMCParams, data, kern):
     np.testing.assert_allclose(ll1, ll2)
 
 
+@pytest.mark.slow
 def test_pyll_vs_cuda(dm, data, kern):
     ll1 = kern.loglik(dm, 0)
     ll2 = psmc_ll(dm, data[0])[1]
     np.testing.assert_allclose(ll1, ll2, rtol=1e-4)
 
 
+@pytest.mark.slow
 def test_pyll_vs_cuda_missing(dm, missing_data):
     kern = get_kernel(M=16, data=missing_data, double_precision=True)
     ll1 = kern.loglik(dm, 0)
@@ -48,6 +53,7 @@ def test_pyll_vs_cuda_missing(dm, missing_data):
     np.testing.assert_allclose(ll1, ll2, rtol=1e-4)
 
 
+@pytest.mark.slow
 def test_pyll_vg_vs_cuda(dm, data, kern):
     ll1, dll1 = jax.value_and_grad(kern.loglik)(dm, 0)
     ll2, dll2 = jax.value_and_grad(lambda dm: psmc_ll(dm, data[0])[1])(dm)

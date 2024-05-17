@@ -104,3 +104,8 @@ ignore_errors = true
 
 [tool.coverage.html]
 directory = "coverage_html_report"
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]

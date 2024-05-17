@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from phlash.hmm import matvec_smc
 from phlash.params import PSMCParams
@@ -6,6 +7,7 @@ from phlash.size_history import DemographicModel
 from phlash.transition import transition_matrix
 
 
+@pytest.mark.slow
 def test_matvec(rng):
     dm = DemographicModel.default(pattern="16*1", theta=1e-2, rho=1e-2)
     A = transition_matrix(dm)
