@@ -6,9 +6,9 @@ from concurrent.futures import as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
-import cyvcf2
 import dinopy
 import numpy as np
+import pysam
 import tqdm.auto as tqdm
 import tskit
 import tszip
@@ -273,6 +273,40 @@ def _read_ts(
     return G
 
 
+class _VCFFile:
+    def __init__(self, file_path, samples: list[str]):
+        self.file_path = file_path
+        self.samples = samples
+        self.vcf = pysam.VariantFile(file_path)  # opens the VCF or BCF file
+        self.vcf.subset_samples(samples)
+        self._contigs = {name: c.length for name, c in self.vcf.header.contigs.items()}
+
+    @property
+    def header(self):
+        return self.vcf.header
+
+    @property
+    def contigs(self):
+        return self._contigs
+
+    def fetch(self, **kwargs):
+        # Check if the samples are in the VCF header
+        def variant_iterator():
+            for record in self.vcf.fetch(**kwargs):
+                het = np.zeros(len(self.samples), dtype=np.int8)
+                nd = 0  # number of derived alleles
+                for i, sample in enumerate(self.samples):
+                    gt = record.samples[sample]["GT"]
+                    if gt is None or None in gt:
+                        het[i] = -1
+                    else:
+                        het[i] = gt[0] != gt[1]
+                    nd += sum([g != 0 and g is not None for g in gt])
+                yield {"pos": record.pos, "ref": record.ref, "nd": nd, "het": het}
+
+        return variant_iterator()
+
+
 @dataclass(frozen=True)
 class VcfContig(Contig):
     """Read data from a VCF file.
@@ -304,10 +338,10 @@ class VcfContig(Contig):
         if self.interval is None:
             v = self._vcf
             if self.contig is None:
-                assert len(v.seqnames) == 1
-                return v.seqlens[0]
+                assert len(v.contigs) == 1
+                return list(v.contigs.values())[0]
             else:
-                return v.seqlens[v.seqnames.index(self.contig)]
+                return v.contigs[self.contig]
         return self.interval[1] - self.interval[0]
 
     def __post_init__(self):
@@ -328,52 +362,37 @@ class VcfContig(Contig):
             raise ValueError(
                 "samples should be a list of (string) sample identifiers in the vcf"
             )
-        diff = set(self.samples) - set(self._vcf.samples)
+        diff = set(self.samples) - set(self._vcf.header.samples)
         if diff:
             raise ValueError(f"the following samples were not found in the vcf: {diff}")
 
     @property
     def _vcf(self):
-        return cyvcf2.VCF(self.vcf_file)
+        return _VCFFile(self.vcf_file, self.samples)
 
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
-        args = (self.vcf_file, self.samples, window_size)
+        vcf = self._vcf
         if not self._allow_empty_region:
-            args += (self.contig, *self.interval)
-        return _read_vcf(*args)
-
-
-def _read_vcf(
-    vcf_file: str,
-    samples: list[str],
-    window_size: int,
-    contig: str = None,
-    start: int = None,
-    end: int = None,
-    progress: bool = False,
-) -> dict[str, np.ndarray]:
-    vcf = cyvcf2.VCF(vcf_file, samples=samples, gts012=True)
-    if contig and start and end:
-        vcf_iter_args = (f"{contig}:{start}-{end}",)
-    else:
-        vcf_iter_args = ()
-        start = 1
-        assert len(vcf.seqnames) == 1
-        end = vcf.seqlens[0]
-    L = end - start + 1
-    N = len(samples)
-    afs = np.zeros(2 * N + 1, dtype=np.int64)
-    H = np.zeros([N, int(L / window_size)], dtype=np.int8)
-    with tqdm.tqdm(total=L, disable=not progress, desc="Reading VCF") as pbar:
-        for variant in vcf(*vcf_iter_args):
-            x = variant.POS - start
-            pbar.update(x - pbar.n)
+            contig = self.contig
+            start, end = self.interval
+            kwargs = {"contig": contig, "start": start, "stop": end}
+        else:
+            assert len(vcf.contigs) == 1
+            contig, end = next(iter(vcf.contigs.items()))
+            start = 1
+            kwargs = {}
+        L = end - start + 1
+        N = len(self.samples)
+        afs = np.zeros(2 * N + 1, dtype=np.int64)
+        H = np.zeros([N, int(L / window_size)], dtype=np.int8)
+        for rec in self._vcf.fetch(**kwargs):
+            x = rec["pos"] - start
             i = min(H.shape[1] - 1, int(x / window_size))
-            ty = variant.gt_types
-            H[:, i] += ty == 1
+            # ty = variant.gt_types
+            H[:, i] += rec["het"]
             # TODO this doesn't handle missing entries correctly
-            afs[ty[ty < 3].sum()] += 1
-    return dict(het_matrix=H, afs=afs[1:-1])
+            afs[rec["nd"]] += 1
+        return dict(het_matrix=H, afs=afs[1:-1])
 
 
 def contig(
