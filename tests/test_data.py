@@ -4,7 +4,6 @@ import tempfile
 
 import msprime
 import numpy as np
-import pytest
 from pytest import fixture
 
 from phlash.data import RawContig, TreeSequenceContig, VcfContig, _chunk_het_matrix
@@ -28,16 +27,14 @@ def test_chunk(rng):
         b += chunk_size
 
 
-def test_psmcfa():
-    fn = os.path.join(os.path.dirname(__file__), "fixtures", "sample.psmcfa")
-    for contig in "1", 0:
-        # allow passing by string name or index
-        rc = RawContig.from_psmcfa(fn, contig, 100)
-        assert rc.het_matrix.shape == (1, 100)
-        assert rc.het_matrix.sum() == 82
-        assert rc.window_size == 100
-    with pytest.raises(ValueError):
-        rc = RawContig.from_psmcfa(fn, "2", 100)
+def test_psmcfa(psmcfa_file):
+    # allow passing by string name or index
+    rc = list(RawContig.from_psmcfa_iter(psmcfa_file, 100))
+    assert len(rc) == 1
+    rc = rc[0]
+    assert rc.het_matrix.shape == (1, 100)
+    assert rc.het_matrix.sum() == 82
+    assert rc.window_size == 100
 
 
 def test_vcf():

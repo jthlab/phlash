@@ -1,3 +1,5 @@
+import os.path
+
 import jax
 import numpy as np
 from pytest import fixture
@@ -32,3 +34,8 @@ def pp(dm) -> PSMCParams:
 @fixture
 def kern(data):
     return get_kernel(M=16, data=data, double_precision=True)
+
+
+@fixture
+def psmcfa_file():
+    return os.path.join(os.path.dirname(__file__), "fixtures", "sample.psmcfa")

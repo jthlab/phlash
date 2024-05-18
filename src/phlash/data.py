@@ -2,6 +2,7 @@
 
 import re
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from concurrent.futures import as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
@@ -120,14 +121,13 @@ class RawContig(Contig):
     window_size: int
 
     @classmethod
-    def from_psmcfa(
-        cls, psmcfa_path: str, contig: str, window_size: int
-    ) -> "RawContig":
-        """Construct a contig from a PSMC FASTA (.psmcfa) file.
+    def from_psmcfa_iter(
+        cls, psmcfa_path: str, window_size: int
+    ) -> Iterable["RawContig"]:
+        """Construct a list of contigs from a PSMC FASTA (.psmcfa) file.
 
         Args:
             psmcfa_path: The path to the .psmcfa file.
-            contig: The name of the contig to read in.
             window_size: The size of the window that was used when binning entries
                 to construct the FASTA file.
 
@@ -138,15 +138,17 @@ class RawContig(Contig):
         """
         # parse psmcfa file
         far = dinopy.FastaReader(psmcfa_path)
-        try:
-            c = next(far.chromosomes(contig))
-        except StopIteration:
-            raise ValueError(f"A contig named {contig} was not found in {psmcfa_path}")
-        seq = np.frombuffer(c.sequence, dtype="c")
-        data = (seq == b"K").astype(np.uint8)
-        (L,) = data.shape
-        afs = np.ones(1)
-        return cls(het_matrix=data[None], afs=afs, window_size=window_size)
+        for record in far.entries():
+            contig_name = record.name
+            logger.debug(
+                f"Reading contig {contig_name.decode('ascii')} from {psmcfa_path}"
+            )
+            seq = np.frombuffer(record.sequence, dtype="c")
+            data = (seq == b"K").astype(np.int8)
+            data[seq == b"N"] = -1  # account for missing data
+            (L,) = data.shape
+            afs = np.ones(1)
+            yield cls(het_matrix=data[None], afs=afs, window_size=window_size)
 
     @property
     def N(self):
