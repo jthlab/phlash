@@ -302,7 +302,7 @@ def fit(
                     break
                 pbar.set_description(f"elpd={ema:.2f} a={a}")
             cb(dms())
-
+    logger.info("MCMC finished successfully")
     # notify the live plot that we are done. fails if we are not using liveplot.
     try:
         plotter.finish()
