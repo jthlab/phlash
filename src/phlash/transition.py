@@ -70,7 +70,7 @@ def transition_matrix(dm: DemographicModel, n: int = 2) -> jax.Array:
     )  # entries above first diagnoal
     p["C>i|C>i-1,T<i"] = jnp.append(jnp.exp(-dt * c_adj[:-1]), 0.0)
     p["C=i|C>i-1,T<i"] = jnp.append(-jnp.expm1(-dt * c_adj[:-1]), 1.0)
-    p = jax.tree_map(lambda a: a.clip(1e-8, 1.0 - 1e-8), p)
+    p = jax.tree.map(lambda a: a.clip(1e-8, 1.0 - 1e-8), p)
     U = (
         p["R<=i,C>i|T=i"][i]
         * jnp.prod(

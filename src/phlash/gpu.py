@@ -9,7 +9,7 @@ import jax.numpy as jnp
 import numpy as np
 import nvidia.cuda_nvrtc.lib
 from cuda import cuda, cudart, nvrtc
-from jax import custom_vjp, tree_map
+from jax import custom_vjp
 from loguru import logger
 
 import phlash.size_history
@@ -309,11 +309,11 @@ class _PSMCKernelBase:
             ret = ll
         # strip off the additional batch dimensions we added earlier
         if added_B and added_S:
-            ret = jax.tree_map(lambda a: a[0, 0, ...], ret)
+            ret = jax.tree.map(lambda a: a[0, 0, ...], ret)
         elif added_B:
-            ret = jax.tree_map(lambda a: a[0, ...], ret)
+            ret = jax.tree.map(lambda a: a[0, ...], ret)
         elif added_S:
-            ret = jax.tree_map(lambda a: a[:, 0, ...], ret)
+            ret = jax.tree.map(lambda a: a[:, 0, ...], ret)
         return ret
 
 
@@ -350,7 +350,7 @@ class PSMCKernel:
 
     @singledispatchmethod
     def loglik(self, pp: PSMCParams, index: int):
-        log_params = tree_map(jnp.log, pp)
+        log_params = jax.tree.map(jnp.log, pp)
         return _psmc_ll(log_params, index=index, kern=self)
 
     # convenience overload mostly to help test code
@@ -382,7 +382,7 @@ class PSMCKernel:
             assert np.isfinite(a).all()
 
         try:
-            jax.tree_map(f, pp)
+            jax.tree.map(f, pp)
         except Exception:
             logger.debug("pp:{}", pp)
             raise
@@ -411,14 +411,14 @@ class PSMCKernel:
 
         ret = self._combine_results(results)
         if index.ndim == 0:
-            ret = jax.tree_map(np.squeeze, ret)
+            ret = jax.tree.map(np.squeeze, ret)
         return ret
 
     def _combine_results(self, results):
         """
         Combine results from all GPUs.
         """
-        return jax.tree_map(lambda *x: np.concatenate(x), *results)
+        return jax.tree.map(lambda *x: np.concatenate(x), *results)
 
     def _compute_on_gpu(
         self, i, device, gpu_kernel, pp, split_index, grad, barrier, results
@@ -440,7 +440,7 @@ def _psmc_ll_fwd(log_params, index, kern):
 
 
 def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
-    params = tree_map(jnp.exp, log_params)
+    params = jax.tree.map(jnp.exp, log_params)
     result_shape_dtype = jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64)
     if grad:
         result_shape_dtype = (
@@ -458,7 +458,7 @@ def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
 
 
 def _psmc_ll_bwd(kern, df, g):
-    return tree_map(lambda a: g * a, df), None
+    return jax.tree.map(lambda a: g * a, df), None
 
 
 _psmc_ll.defvjp(_psmc_ll_fwd, _psmc_ll_bwd)

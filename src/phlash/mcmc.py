@@ -281,7 +281,7 @@ def fit(
                 assert jnp.isfinite(x).all()
                 return x
 
-            state = jax.tree_map(f, state1)
+            state = jax.tree.map(f, state1)
             _particles = state.particles
             if test_data is not None and i % 10 == 0:
                 e = elpd(state.particles)

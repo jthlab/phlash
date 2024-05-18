@@ -37,7 +37,7 @@ class PSMCParams(NamedTuple):
         emis1 = -jnp.expm1(-u)
         pi = dm.eta.pi
         A = phlash.transition.transition_matrix(dm)
-        emis0, emis1, pi, A = jax.tree_map(
+        emis0, emis1, pi, A = jax.tree.map(
             lambda a: a.clip(1e-20, 1.0 - 1e-20), (emis0, emis1, pi, A)
         )
         b, d, u = (jnp.diag(A, i) for i in [-1, 0, 1])
