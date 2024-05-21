@@ -21,9 +21,10 @@ This document explains how to run <code>phlash</code>. Before doing so, please e
 
 ## If you're coming from PSMC
 If you are familiar with the PSMC software, you may find it helpful to know that `phlash` is conceptually similar to PSMC, but with a few key differences:
-    - `phlash` does not (yet) have a command-line interface. It is a Python package that is imported and used in a Python script or Jupyter notebook.
-    - `phlash` is a Bayesian method that estimates a posterior distribution over demographic models, rather than a point estimate. This means that the output of `phlash` is a list of demographic models, each of which is a valid sample from the posterior distribution.
-    - `phlash` does not have a proprietary data format. It can read data from VCF/BCF files or tree sequences, and can be extended to read other formats.
+
+- `phlash` does not (yet) have a command-line interface. It is a Python package that is imported and used in a Python script or Jupyter notebook.
+- `phlash` is a Bayesian method that estimates a posterior distribution over demographic models, rather than a point estimate. This means that the output of `phlash` is a list of demographic models, each of which is a valid sample from the posterior distribution.
+- `phlash` does not have a proprietary data format. It can read data from VCF/BCF files or tree sequences, and can be extended to read other formats.
 
 If you already have .psmcfa files (generated using i.e. the `fq2psmcfa` utility), a convenience function is provided for reanalyzing them with `phlash`:
 
