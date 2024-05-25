@@ -4,6 +4,7 @@ import tempfile
 
 import msprime
 import numpy as np
+import pytest
 from pytest import fixture
 
 from phlash.data import RawContig, TreeSequenceContig, VcfContig, _chunk_het_matrix
@@ -49,6 +50,18 @@ def test_vcf():
     assert d["het_matrix"].max() == 2
     assert d["het_matrix"].sum() == 256
     assert np.all(d["afs"] == [143, 60, 89])
+
+
+def test_vcf_empty_samples():
+    # if samples is an empty list, it should raise an error
+    fn = os.path.join(os.path.dirname(__file__), "fixtures", "sample.bcf")
+    with pytest.raises(ValueError):
+        VcfContig(
+            fn,
+            contig="1",
+            interval=(25_000_000, 26_000_000),
+            samples=[],
+        )
 
 
 def test_ts(sim):
