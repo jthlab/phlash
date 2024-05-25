@@ -365,6 +365,8 @@ class VcfContig(Contig):
             raise ValueError(
                 "samples should be a list of (string) sample identifiers in the vcf"
             )
+        if len(self.samples) == 0:
+            raise ValueError("no samples were provided")
         diff = set(self.samples) - set(self._vcf.header.samples)
         if diff:
             raise ValueError(f"the following samples were not found in the vcf: {diff}")
