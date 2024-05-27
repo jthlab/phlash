@@ -389,15 +389,15 @@ class VcfContig(Contig):
         L = end - start + 1
         N = len(self.samples)
         afs = np.zeros(2 * N + 1, dtype=np.int64)
-        H = np.zeros([N, int(L / window_size)], dtype=np.int8)
+        H = np.zeros([N, int(L / window_size)], dtype=bool)
+        # TODO this doesn't handle missing entries correctly
         for rec in self._vcf.fetch(**kwargs):
             x = rec["pos"] - start
             i = min(H.shape[1] - 1, int(x / window_size))
             # ty = variant.gt_types
-            H[:, i] += rec["het"]
-            # TODO this doesn't handle missing entries correctly
+            H[:, i] |= rec["het"] > 0
             afs[rec["nd"]] += 1
-        return dict(het_matrix=H, afs=afs[1:-1])
+        return dict(het_matrix=H.astype(np.int8), afs=afs[1:-1])
 
 
 def contig(
