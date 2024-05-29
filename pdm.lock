@@ -5,7 +5,7 @@
 groups = ["default", "dev", "gpu"]
 strategy = ["cross_platform", "inherit_metadata"]
 lock_version = "4.4.1"
-content_hash = "sha256:13f340ec88124cdd60d09e0b842e1f910947e093d700e6730628bdaaa519a18f"
+content_hash = "sha256:aaa217d0b3ffc691a3fea36c76bd7b309fc14e25827c3f0c9ccd540feb741a5d"
 
 [[package]]
 name = "absl-py"
@@ -1381,6 +1381,19 @@ files = [
     {file = "ruamel.yaml.clib-0.2.8-cp312-cp312-win32.whl", hash = "sha256:5c365d91c88390c8d0a8545df0b5857172824b1c604e867161e6b3d59a827eaa"},
     {file = "ruamel.yaml.clib-0.2.8-cp312-cp312-win_amd64.whl", hash = "sha256:1758ce7d8e1a29d23de54a16ae867abd370f01b5a69e1a3ba75223eaa3ca1a1b"},
     {file = "ruamel.yaml.clib-0.2.8.tar.gz", hash = "sha256:beb2e0404003de9a4cab9753a8805a8fe9320ee6673136ed7f04255fe60bb512"},
+]
+
+[[package]]
+name = "scienceplots"
+version = "2.1.1"
+summary = "Format Matplotlib for scientific plotting"
+groups = ["default"]
+dependencies = [
+    "matplotlib",
+]
+files = [
+    {file = "SciencePlots-2.1.1-py3-none-any.whl", hash = "sha256:2e64d2e93b4f98702f30145dbb70d238f5dc315e227fec331489631232dfc9e0"},
+    {file = "SciencePlots-2.1.1.tar.gz", hash = "sha256:d8d197e3410f87ebdad0b9c265eaab596094fb082d97123e835f6bc32800ab54"},
 ]
 
 [[package]]
