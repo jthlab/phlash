@@ -89,6 +89,7 @@ def fit(
     afs, chunks = init_mcmc_data(
         data, window_size, overlap, chunk_size, max_samples, num_workers
     )
+    logger.debug("chunks.shape={}", chunks.shape)
     # to conserve memory, we get rid of data at this point
     del data
     # the mutation rate per generation, if known.
