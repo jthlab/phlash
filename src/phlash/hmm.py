@@ -67,14 +67,21 @@ def matvec_smc(v, pp: PSMCParams):
 
 @singledispatch
 def psmc_ll(pp: PSMCParams, data: Int8[Array, "L"]) -> tuple[jax.Array, float]:
-    # for missing data, set emis[-1] = 1.
-    emis = jnp.array([pp.emis0, pp.emis1, jnp.ones_like(pp.emis0)])
+    def emis(ob):
+        n, d = ob
+        mu = n * pp.lam
+        if True:
+            return jnp.where(n == 0, d == 0, jnp.exp(-mu) * mu**d)
+        else:
+            return jnp.where(
+                n == 0, d == 0, jnp.where(d == 1, jnp.exp(-mu), -jnp.expm1(-mu))
+            )
 
     @jax.remat
     def fwd(tup, ob):
         alpha_hat, ll = tup
         alpha_hat = matvec_smc(alpha_hat, pp)
-        alpha_hat *= emis[ob]
+        alpha_hat *= emis(ob)
         c = alpha_hat.sum()
         return (alpha_hat / c, ll + jnp.log(c)), None
 

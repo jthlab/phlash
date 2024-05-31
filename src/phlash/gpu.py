@@ -99,16 +99,13 @@ class _PSMCKernelBase:
 
     def __init__(self, M: int, data: jax.Array, double_precision: bool = False):
         CudaInitializer.initialize_cuda()
-        assert data.ndim == 2
+        assert data.ndim == 3
         assert data.dtype == np.int8
-        assert data.min() >= -1
-        data = data.clip(-1, 1)
-        assert data.max() <= 1
-        assert np.all(
-            data.max(axis=1) > -1
-        ), "data contains observations with all missing values"
+        assert data.min() >= 0
+        assert (data[..., 0] >= data[..., 1]).all()
         self.double_precision = double_precision
-        self._N, self._L = data.shape
+        self._N, self._L = data.shape[:2]
+        assert data.shape[2] == 2
         # copy the data onto the gpu once and for all
         err, self._data_gpu = cuda.cuMemAlloc(data.nbytes)
         try:
@@ -186,7 +183,7 @@ class _PSMCKernelBase:
         inds = np.atleast_1d(index)
         if index.ndim == 0:
             added_S = True
-            assert pa.shape == (7, M)
+            assert pa.shape == (6, M)
             pa = pa[None]
         S = inds.shape[0]
         assert inds.shape == (S,)
@@ -196,19 +193,19 @@ class _PSMCKernelBase:
         # pps should be a stack of params, one for each dataset
         added_B = False
         if pa.ndim == 2:
-            assert pa.shape == (7, M)
+            assert pa.shape == (6, M)
             pa = np.repeat(pa[None, None], S, axis=1)
-            assert pa.shape == (1, S, 7, M)
+            assert pa.shape == (1, S, 6, M)
             added_B = True
         if pa.ndim == 3:
-            assert pa.shape == (S, 7, M)
+            assert pa.shape == (S, 6, M)
             pa = pa[None]
             added_B = True
         assert pa.ndim == 4
         B = pa.shape[0]
-        assert pa.shape == (B, S, 7, M)
+        assert pa.shape == (B, S, 6, M)
         assert np.isfinite(pa).all(), "not all parameters finite"
-        dlog = np.zeros([B, S, 7, M], dtype=self.float_type)
+        dlog = np.zeros([B, S, 6, M], dtype=self.float_type)
         ll = np.zeros([B, S], dtype=np.float64)
         # copy in the needed arrays
         # TODO these memory allocations need only happen once, but they are
@@ -255,7 +252,7 @@ class _PSMCKernelBase:
             arg_values += (self._dlog_gpu,)
             arg_types += (None,)
             grid = (B, S, 1)
-            block = (7, M, 1)
+            block = (6, M, 1)
         else:
             f = self._f["loglik"]
             grid = (B, 1, 1)
@@ -302,14 +299,20 @@ class _PSMCKernelBase:
                 # we have to roll the last axis around by 1 because v is stored
                 # in positions [1, ..., M-1] in the input array.
                 v=np.roll(dlog[..., 3, :], 1, axis=-1),
-                emis0=dlog[..., 4, :],
-                emis1=dlog[..., 5, :],
-                pi=dlog[..., 6, :],
+                lam=dlog[..., 4, :],
+                pi=dlog[..., 5, :],
             )
             logger.trace("ll={}, dll={}", ll, dll)
             ret = (ll, dll)
         else:
             ret = ll
+
+        def f(a):
+            assert np.isfinite(a).all()
+            return a
+
+        ret = jax.tree.map(f, ret)
+
         # strip off the additional batch dimensions we added earlier
         if added_B and added_S:
             ret = jax.tree.map(lambda a: a[0, 0, ...], ret)
@@ -383,9 +386,10 @@ class PSMCKernel:
     ) -> tuple[float, PSMCParams]:
         def f(a):
             assert np.isfinite(a).all()
+            return a
 
         try:
-            jax.tree.map(f, pp)
+            pp = jax.tree.map(f, pp)
         except Exception:
             logger.debug("pp:{}", pp)
             raise
@@ -393,7 +397,7 @@ class PSMCKernel:
         indices = np.atleast_1d(index)
         D = len(self.devices)
         split_indices = np.array_split(indices, D)
-        threads = []
+        # threads = []
         assert D == len(self.gpu_kernels)
         results = [None] * D
         # FIXME which if |indices| < |gpus|
@@ -401,16 +405,18 @@ class PSMCKernel:
         for i, (device, gpu_kernel, split_index) in enumerate(
             zip(self.devices, self.gpu_kernels, split_indices)
         ):
-            thread = threading.Thread(
-                target=self._compute_on_gpu,
-                args=(i, device, gpu_kernel, pp, split_index, grad, barrier, results),
-            )
-            threads.append(thread)
-            thread.start()
-            logger.trace("spawned thread {}", thread)
+            args = (i, device, gpu_kernel, pp, split_index, grad, barrier, results)
+            self._compute_on_gpu(*args)
+            # thread = threading.Thread(
+            #     target=self._compute_on_gpu,
+            #     args=args,
+            # )
+            # threads.append(thread)
+            # thread.start()
+            # logger.trace("spawned thread {}", thread)
 
-        for thread in threads:
-            thread.join()
+        # for thread in threads:
+        #     thread.join()
 
         ret = self._combine_results(results)
         if index.ndim == 0:
@@ -468,24 +474,21 @@ _psmc_ll.defvjp(_psmc_ll_fwd, _psmc_ll_bwd)
 
 
 KERNEL_SRC = r"""
-// Shorthands to index into the global gradient array of shape [M, M, 6]
-// I experimented with all memory layouts and this one results in the most
-// coalesced writes
-// Other accessors
 typedef signed char int8_t;
 typedef long long int64_t;
 
-#define P 7
+#define P 6
 
 #define LOG_B 0
 #define LOG_D 1
 #define LOG_U 2
 #define LOG_V 3
-#define LOG_E0 4
-#define LOG_E1 5
-#define LOG_PI 6
+#define LOG_LAM 4
+#define LOG_PI 5
 
-#define LOG_X(m, i)   H[i * M * P + m * P + g]  // [M,M,7]
+// I experimented with all memory layouts and this one results in the most
+// coalesced writes
+#define LOG_X(m, i)   H[i * M * P + m * P + g]  // [M,M,6]
 #define LOG_X_STRIDE  M * P
 
 // Shorthands to index into the global params array
@@ -493,8 +496,8 @@ typedef long long int64_t;
 #define D(m) p[1 * M + m]
 #define U(m) p[2 * M + m]
 #define V(m) p[3 * M + m]
-#define EMIS(ob, m) p[(4 + ob) * M + m]
-#define PI(m) p[6 * M + m]
+#define LAM(m) p[4 * M + m]
+#define PI(m) p[5 * M + m]
 
 template<typename T>
 __device__ void matvec(T *v, FLOAT *p, int stride = 1) {
@@ -516,9 +519,14 @@ __device__ void matvec(T *v, FLOAT *p, int stride = 1) {
     }
 }
 
-__device__ FLOAT p_emis(const int8_t ob, FLOAT *p, const int m) {
-    if (ob == -1) return 1.;
-    return EMIS(ob, m);
+__device__ FLOAT p_emis(const int8_t* ob, FLOAT *p, const int m) {
+    const int8_t n = ob[0];
+    const int8_t d = ob[1];
+    if (n == 0) return FLOAT(d == 0);
+    // d ~ poisson(n * lam)
+    const FLOAT mu = n * LAM(m);
+    // return (d == 0) ? exp(-mu) : -expm1(-mu);
+    return exp(-mu + d * log(mu));
 }
 
 extern "C"
@@ -550,12 +558,12 @@ loglik(int8_t const *datag,
     }
     double ll = 0.;
     // local variables
-    const int8_t *data = &datag[inds[s] * L];
-    int8_t ob;
+    const int8_t *data = &datag[inds[s] * L * 2];
+    int8_t const * ob;
     int64_t ell;
     for (ell = 0; ell < L; ell++) {
         matvec(h, p);
-        ob = data[ell];
+        ob = &data[ell * 2];
         c = 0.;
         for (m = 0; m < M; ++m) {
             h[m] *= p_emis(ob, p, m);
@@ -610,7 +618,6 @@ loglik_grad(int8_t const *datag,
     if (g == 0) h[m] = PI(m);  // initialize to pi
     __syncthreads();
     // local variables
-    int8_t ob;
     int i, j;
     FLOAT tmp;
     ll = 0.;
@@ -624,13 +631,16 @@ loglik_grad(int8_t const *datag,
         delta = +1;
     }
     // main data loop
-    const int8_t *data = &datag[inds[s] * L];
+    const int8_t *data = &datag[inds[s] * L * 2];
+    int8_t const * ob;
+    int8_t n, d;
+    FLOAT mu;
     int64_t ell;
     c = 0.;
     __syncthreads();
     for (ell = 0; ell < L; ell++) {
         // read chunks of the data from coalesced global memory
-        ob = data[ell];
+        ob = &data[ell * 2];
         // update each derivative matrix
         matvec(&LOG_X(m, 0), p, LOG_X_STRIDE);
         sum1 = 0.;
@@ -654,8 +664,24 @@ loglik_grad(int8_t const *datag,
         __syncthreads();
         if (g == 0 && m == 0) matvec(h, p);
         __syncthreads();
-        LOG_X(m, m) += (g == LOG_E0) * h[m] * (ob == 0);
-        LOG_X(m, m) += (g == LOG_E1) * h[m] * (ob == 1);
+
+        // log p_emis = {-n * lam, d == 0
+        //            = {log(1 - exp(-n * lam)), d > 0
+        // d/dlam log p_emis = {-n, d == 0
+        n = ob[0];
+        d = ob[1];
+        if (n > 0) {
+            mu = n * LAM(m);
+            // log p_emis = -mu + d * log(mu)
+            // d/dlam log p_emis = d/dmu log p_emis * dmu/dlam = n * (-1 + d / mu)
+            LOG_X(m, m) += (g == LOG_LAM) * h[m] * (n * (d / mu - 1));
+            // log p_emis = { -mu, d == 0; log(1 - exp(-mu)), d > 0
+            /*
+            LOG_X(m, m) += (g == LOG_LAM) * h[m] * (
+                (d == 0) ? -n : n / expm1(mu)
+            );
+            */
+        }
         __syncthreads();
         if (g == 0) {
             h[m] *= p_emis(ob, p, m);
@@ -678,9 +704,9 @@ loglik_grad(int8_t const *datag,
     if (g == 0 && m == 0) {
         loglik[b * S + s] = ll;
     }
-    // for pi we accumulated dll/dpi instead of dll/dlog(pi) so
+    // for pi, lam we accumulated dll/dpi instead of dll/dlog(pi) so
     // we have to multiply by
-    const FLOAT x = (g == LOG_PI) ? PI(m) : 1.;
+    const FLOAT x = (g == LOG_PI) ? PI(m) : (g == LOG_LAM) ? LAM(m) : 1.;
     for (i = 0; i < M; ++i) {
         dlog[b * S * P * M + s * P * M + g * M + m] += LOG_X(m, i) * x;
     }

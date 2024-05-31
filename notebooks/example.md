@@ -6,16 +6,12 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.15.2
+      jupytext_version: 1.16.2
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
     name: python3
 ---
-
-```python
-%load_ext nb_black
-```
 
 This document explains how to run <code>phlash</code>. Before doing so, please ensure that your system meets the [requirements](../README.md) and that you have installed the package.
 
@@ -29,8 +25,8 @@ If you are familiar with the PSMC software, you may find it helpful to know that
 If you already have .psmcfa files (generated using i.e. the `fq2psmcfa` utility), a convenience function is provided for reanalyzing them with `phlash`:
 
 ```python
-import phlash
-posterior_samples = phlash.psmc(['/path/to/file1.psmcfa', '/path/to/file2.psmcfa', ...])
+# import phlash
+# posterior_samples = phlash.psmc(['/path/to/file1.psmcfa', '/path/to/file2.psmcfa', ...])
 ```
 
 ## General usage guide
@@ -71,10 +67,10 @@ To load data from all the autosomes, simply repeat this command for each of them
 
 ```python
 chroms_1kg = []
-for chrom in range(1, 23):
+for chrom in range(21, 23):
     path = os.path.join(onekg_base, template.format(chrom=f"chr{chrom}"))
     chroms_1kg.append(
-        phlash.contig(path, samples=["NA12878"], region=f"{chrom}:1-10000000")
+        phlash.contig(path, samples=["NA12878"], region=f"{chrom}:10000000-100000000")
     )
 ```
 
@@ -86,15 +82,15 @@ Notice that, to prevent inadvertent errors (such as the inclusion of telomeric r
 `phlash.contig()` also supports natively reading variants from tree sequences. For example, to load data for the first individual (represented as nodes `(0,1)`) in the [Wohns et al. inferred tree sequences](https://zenodo.org/records/5512994), execute the following commands:
 
 ```python
-import glob
+# import glob
 
-unified_base = "/scratch/unified"  # update with path on your local system
-pattern = "hgdp_tgp_sgdp_high_cov_ancients_chr*_?.dated.trees.tsz"
+# unified_base = "/scratch/unified"  # update with path on your local system
+# pattern = "hgdp_tgp_sgdp_high_cov_ancients_chr*_?.dated.trees.tsz"
 
-chroms_ts = []
+# chroms_ts = []
 
-for chrom in glob.glob(os.path.join(unified_base, pattern)):
-    chroms_ts.append(phlash.contig(chrom, samples=[(0, 1)]))
+# for chrom in glob.glob(os.path.join(unified_base, pattern)):
+#     chroms_ts.append(phlash.contig(chrom, samples=[(0, 1)]))
 ```
 
 This cell takes longer to run, because `phlash` has to decompress and load each tree sequence, and also consumes more memory. (Note that `phlash.contig()` supports either tszipped or raw tree sequence files, or instantiated `TreeSequence` objects.)
@@ -112,12 +108,12 @@ For use cases that are not covered here, you may directly import your own data u
 Estimation is performed using `phlash.fit()`. In the most basic use-case, it takes a list of contigs and fits the model:
 
 ```python
-results = phlash.fit(chroms_1kg)
+results = phlash.fit(chroms_1kg, mutation_rate=1.29e-8)
 ```
 
 The output of `fit()` is a list of `phlash.size_history.DemographicModel` classes. These are simple [named tuples](https://docs.python.org/3/library/collections.html#collections.namedtuple) with fields `theta`, `rho`, and `eta`. The latter is itself an instance of `phlash.size_history.SizeHistory`, which represents a piecewise-constant size history function.
 
-Since each `DemographicModel` is a valid posterior sample, posterior inference is easy: just examine the empirical distribution of whatever statistic you are interested in. For example, to plot the pointwise posterior median:
+Since each `DemographicModel` is a valid posterior sample, posterior inference is easy: just examine the empirical distribution of the statistic you are interested in. For example, to plot the pointwise posterior median:
 
 ```python
 import matplotlib.pyplot as plt
@@ -178,7 +174,7 @@ import phlash.sim
 sim_contigs = phlash.sim.stdpopsim_dataset(
     "HomSap",
     "Zigzag_1S14",
-    {"generic": 100},
+    {"generic": 5},
     options=dict(length_multiplier=0.1),
 )
 ```
@@ -187,7 +183,57 @@ sim_contigs = phlash.sim.stdpopsim_dataset(
 
 ```python
 test_k = list(sim_contigs["data"])[0]
-test_data = sim_contigs["data"][test_k]
+test_data  = sim_contigs["data"][test_k]
 train_data = [v for k, v in sim_contigs["data"].items() if k != test_k]
-results = phlash.fit(train_data, test_data, truth=sim_contigs["truth"], fold_sfs=False)
+```
+
+```python
+test_data.get_data(100)['het_matrix'].min((0,1))
+```
+
+```python
+import os
+os.environ['LOGURU_LEVEL'] = 'TRACE'
+```
+
+```python
+results = phlash.fit(train_data, test_data, truth=sim_contigs["truth"], fold_sfs=False, niter=100)
+```
+
+```python
+import phlash.mcmc
+```
+
+```python
+p = phlash.mcmc._particles
+```
+
+```python
+p.t_tr
+```
+
+```python
+from jax import vmap
+from phlash.params import PSMCParams, MCMCParams
+```
+
+```python
+dms = vmap(MCMCParams.to_dm)(p)
+```
+
+```python
+p.rho_over_theta
+```
+
+```python
+from phlash.size_history import SizeHistory
+ect = vmap(SizeHistory.ect)(dms.eta)
+```
+
+```python
+mcp.rho_over_theta
+```
+
+```python
+
 ```

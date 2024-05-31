@@ -39,26 +39,28 @@ def _chunk_het_matrix(
     overlap: int,
     chunk_size: int,
 ) -> np.ndarray:
-    data = het_matrix.clip(-1, 1).astype(np.int8)
-    assert data.ndim == 2
+    data = het_matrix
+    assert data.ndim == 3
     data = np.ascontiguousarray(data)
     assert data.data.c_contiguous
-    N, L = data.shape
+    N, L, _ = data.shape
+    assert data.shape == (N, L, 2)
     S = chunk_size + overlap
     L_pad = int(np.ceil(L / S) * S)
-    padded_data = np.pad(data, [[0, 0], [0, L_pad - L]], constant_values=-1)
+    padded_data = np.pad(data, [[0, 0], [0, L_pad - L], [0, 0]])
     assert L_pad % S == 0
     num_chunks = L_pad // S
-    new_shape = (N, num_chunks, S)
+    new_shape = (N, num_chunks, S, 2)
     new_strides = (
         padded_data.strides[0],
         padded_data.strides[1] * chunk_size,
         padded_data.strides[1],
+        padded_data.strides[2],
     )
     chunked = np.lib.stride_tricks.as_strided(
         padded_data, shape=new_shape, strides=new_strides
     )
-    return np.copy(chunked.reshape(-1, S))
+    return np.copy(chunked.reshape(-1, S, 2))
 
 
 class Contig(ABC):
@@ -122,7 +124,7 @@ class RawContig(Contig):
 
     @classmethod
     def from_psmcfa_iter(
-        cls, psmcfa_path: str, window_size: int
+        cls, psmcfa_path: str, window_size: int = 100
     ) -> Iterable["RawContig"]:
         """Construct a list of contigs from a PSMC FASTA (.psmcfa) file.
 
@@ -260,7 +262,8 @@ def _read_ts(
     node_inds = np.array([[nodes_flat.index(x) for x in t] for t in nodes])
     N = len(nodes)
     L = int(np.ceil(ts.get_sequence_length() / window_size))
-    G = np.zeros([N, L], dtype=np.int8)
+    G = np.zeros([N, L, 2], dtype=np.int8)
+    G[..., 0] = window_size
     with tqdm.tqdm(
         ts.variants(samples=nodes_flat, copy=False),
         total=ts.num_sites,
@@ -270,7 +273,7 @@ def _read_ts(
         for v in pbar:
             g = v.genotypes[node_inds]
             ell = int(v.position / window_size)
-            G[:, ell] += g[:, 0] != g[:, 1]
+            G[:, ell, 1] += g[:, 0] != g[:, 1]
     return G
 
 
@@ -387,15 +390,20 @@ class VcfContig(Contig):
         L = end - start + 1
         N = len(self.samples)
         afs = np.zeros(2 * N + 1, dtype=np.int64)
-        H = np.zeros([N, int(L / window_size)], dtype=bool)
-        # TODO this doesn't handle missing entries correctly
+        H = np.zeros([N, int(L / window_size), 2], dtype=np.int8)
+        H[:, :, 0] = window_size
         for rec in self._vcf.fetch(**kwargs):
             x = rec["pos"] - start
             i = min(H.shape[1] - 1, int(x / window_size))
-            # ty = variant.gt_types
-            H[:, i] |= rec["het"] > 0
+            # number of observed alleles -= entries that are missing
+            H[:, i, 0] -= rec["het"] == -1
+            H[:, i, 1] += rec["het"] > 0
+            # TODO this doesn't handle missing entries correctly
             afs[rec["nd"]] += 1
-        return dict(het_matrix=H.astype(np.int8), afs=afs[1:-1])
+        assert H[:, :, 0].min() >= 0
+        assert H[:, :, 1].min() >= 0
+        assert (H[:, :, 0] >= H[:, :, 1]).all()
+        return dict(het_matrix=H, afs=afs[1:-1])
 
 
 def contig(
@@ -553,5 +561,6 @@ def init_mcmc_data(
     assert len({a.shape for a in afss}) == 1
     # all afs have same dimension
     assert len({ch.shape[-1] for ch in chunks}) == 1
-    assert all(ch.ndim == 2 for ch in chunks)
+    assert all(ch.ndim == 3 for ch in chunks)
+    assert all(ch.shape[2] == 2 for ch in chunks)
     return np.sum(afss, 0), np.concatenate(chunks, 0)
