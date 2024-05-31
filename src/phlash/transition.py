@@ -5,6 +5,12 @@ from phlash.size_history import DemographicModel
 
 
 def _expQ(r, c, n):
+    # matrix exponential exp(Q) for Q =
+    #     [
+    #         [-r, r, 0.0],  # non-recombining/invisible recombined
+    #         [1.0 * c, -(n * c), (n - 1) * c],  # floating
+    #         [0.0, 0.0, -0.0],  # visibly recombined
+    #     ]
     u = jnp.sqrt((c * n) ** 2 - 2 * c * (n - 2) * r + r**2) / 2
     v = (r + c * n) / 2
     w = (r - c * n) / 2

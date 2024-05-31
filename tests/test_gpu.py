@@ -23,9 +23,9 @@ def rel_err(a, b):
 
 
 @pytest.mark.slow
-def test_check_grads(dm, data, kern):
+def test_aheck_grads(dm, data, kern):
     jax.test_util.check_grads(
-        lambda d: kern.loglik(d, 0), (dm,), order=1, modes=["rev"], rtol=1e-2
+        lambda d: kern.loglik(d, 0), (dm,), order=1, modes=["rev"], rtol=1e-4
     )
 
 
