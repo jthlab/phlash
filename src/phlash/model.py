@@ -12,7 +12,7 @@ def log_prior(mcp: MCMCParams) -> float:
     ret = sum(
         jax.scipy.stats.norm.logpdf(a, loc=mu, scale=sigma).sum()
         for (a, mu, sigma) in [
-            (jnp.log(mcp.rho_over_theta), 0.0, 1.0),
+            (mcp.log_rho_over_theta, 0.0, 1.0),
         ]
     )
     ret -= mcp.alpha * jnp.sum(jnp.diff(mcp.log_c) ** 2)
@@ -48,10 +48,15 @@ def log_density(
         The log density, or negative infinity where the result is not finite.
     """
     dm = mcp.to_dm()
+    dm = dm._replace(rho=dm.rho * mcp.window_size)
     pp = PSMCParams.from_dm(dm)
-    pis = vmap(lambda pp, d: phlash.hmm.psmc_ll(pp, d)[0], (None, 0))(
-        pp, warmup
-    )  # (I, M)
+    if warmup is None:
+        pis = vmap(lambda _: pp.pi)(inds)  # (I, M)
+    else:
+        pis = vmap(lambda pp, d: phlash.hmm.psmc_ll(pp, d)[0], (None, 0))(
+            pp, warmup
+        )  # (I, M)
+    pis = pis.clip(0, 1)
     pps = vmap(lambda pi: pp._replace(pi=pi))(pis)
     l1 = log_prior(mcp)
     l2 = vmap(kern.loglik, (0, 0))(pps, inds).sum()

@@ -5,7 +5,6 @@ import scienceplots  # noqa: F401
 from phlash.size_history import DemographicModel, SizeHistory
 from phlash.util import tree_stack
 
-
 def plot_posterior(
     dms: list[DemographicModel],
     ax: "matplotlib.axes.Axes" = None,
