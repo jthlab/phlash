@@ -138,12 +138,6 @@ def _params_for_sim(
     chrom: stdpopsim.Contig,
     pop_dict: dict,
 ):
-    active_pops = [p for p, n in pop_dict.items() if n > 0]
-    if len(active_pops) == 1:
-        pd = {active_pops[0]: 2}
-    else:
-        assert len(active_pops) == 2
-        pd = {p: 1 for p in active_pops}
     r = chrom.recombination_map.rate
     assert len(r) == 1
     r = r.item()

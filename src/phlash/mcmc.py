@@ -143,19 +143,19 @@ def fit(
     init = options.get("init")
     # watterson's estimator of the mutation rate
     ch0 = chunks[:, overlap:]
-    watterson = ch0[ch0 > -1].mean() / window_size
+    w = ch0.sum((0, 1))
+    watterson = w[1] / w[0]
     # User can override theta if they want -- mainly useful for getting aligned
     # beginning/end time points across different populations.
-    watterson = options.get("theta", watterson)
+    theta = options.get("theta", watterson)
     # although we could work in the per-generation scaling if 'mutation_rate' is passed,
     # it seems to be numerically better (estimates are more accurate) to work in the
     # coalescent scaling. perhaps because all the calculations are "O(1)" instead of
     # "O(huge number) * O(tiny number)" ...
-    theta = watterson  # i.e., N0=1
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
         if mutation_rate is not None:
-            N0 = theta / mutation_rate
+            N0 = theta / 4 / mutation_rate
             options.setdefault("t1", 1e1 / 2 / N0)
             options.setdefault("tM", 1e6 / 2 / N0)
         t1 = options.get("t1", 1e-4)
@@ -166,17 +166,18 @@ def fit(
         pat = "14*1+1*2"
         init = MCMCParams.from_linear(
             pattern=pat,
-            rho=rho * window_size,
+            rho=rho,
             t1=t1,
             tM=tM,
             c=jnp.ones(len(Pattern(pat))),  # len(c)==len(Pattern(pattern))
-            theta=theta * window_size,
+            theta=theta,
             alpha=options.get("alpha", 0.0),
             beta=options.get("beta", 0.0),
         )
     assert isinstance(init, MCMCParams)
     opt = optax.amsgrad(learning_rate=options.get("learning_rate", 0.1))
-    svgd = blackjax.svgd(grad(log_density), opt)
+    df = grad(log_density)
+    svgd = blackjax.svgd(df, opt)
 
     # set up the particles and add noise
     M = init.M
@@ -230,7 +231,7 @@ def fit(
                     c=jnp.array([0.0, 1.0, 1.0]),
                     inds=jnp.arange(N_test),
                     kern=test_kern,
-                    warmup=jnp.full([N_test, 1], -1, dtype=jnp.int8),
+                    warmup=None,
                     afs=test_afs,
                     afs_transform=afs_transform,
                 )
@@ -260,8 +261,6 @@ def fit(
 
     def dms():
         ret = vmap(MCMCParams.to_dm)(state.particles)
-        # rates are per window, so we have to scale up to get the per-base-pair rates.
-        ret = ret._replace(theta=ret.theta / window_size, rho=ret.rho / window_size)
         if mutation_rate:
             ret = vmap(DemographicModel.rescale, (0, None))(ret, mutation_rate)
         return ret

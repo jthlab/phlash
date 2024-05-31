@@ -16,11 +16,11 @@ def sim():
 
 
 def test_chunk(rng):
-    H = rng.integers(0, 2, size=(1, 10_000))
+    H = rng.integers(0, 2, size=(1, 10_000, 2))
     overlap = 123
     chunk_size = 4_567
     ch = _chunk_het_matrix(H, overlap=overlap, chunk_size=chunk_size)
-    assert ch.shape == (3, overlap + chunk_size)
+    assert ch.shape == (3, overlap + chunk_size, 2)
     b = 0
     for ch_i in ch:
         q = min(chunk_size + overlap, len(H[0, b:]))
@@ -33,9 +33,10 @@ def test_psmcfa(psmcfa_file):
     rc = list(RawContig.from_psmcfa_iter(psmcfa_file, 100))
     assert len(rc) == 1
     rc = rc[0]
-    assert rc.het_matrix.shape == (1, 100)
-    assert rc.het_matrix.sum() == 82
     assert rc.window_size == 100
+    assert rc.het_matrix.shape == (1, 100, 2)
+    assert rc.het_matrix[0, :, 0].sum() == 100 * 99  # 1 missing entry has been inserted
+    assert rc.het_matrix[0, :, 1].sum() == 81
 
 
 def test_vcf():
@@ -47,8 +48,10 @@ def test_vcf():
         samples=["NA12878", "NA12889"],
     )
     d = vcf.get_data(100)
-    assert d["het_matrix"].max() == 2
-    assert d["het_matrix"].sum() == 256
+    H = d["het_matrix"]
+    assert H.shape == (2, 1_000_000 // 100, 2)
+    assert H[..., 0].sum() == 2_000_000
+    assert H[..., 1].sum() == 256
     assert np.all(d["afs"] == [143, 60, 89])
 
 
@@ -67,8 +70,9 @@ def test_vcf_empty_samples():
 def test_ts(sim):
     tsc = TreeSequenceContig(sim, [(0, 1), (2, 3)])
     d = tsc.get_data(100)
-    assert d["het_matrix"].max() == 3
-    assert d["het_matrix"].sum() == 570
+    assert d["het_matrix"].shape == (2, 10_000, 2)
+    assert d["het_matrix"][..., 1].max() == 3
+    assert d["het_matrix"][..., 1].sum() == 570
     assert np.all(d["afs"] == [507, 172, 63])
 
 

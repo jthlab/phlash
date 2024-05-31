@@ -19,7 +19,7 @@ def test_functional1():
 
 
 def test_functional2():
-    het = np.array([[0, 1, 0, 1, 1]], dtype=np.int8)
+    het = np.array([[100] * 5, [0, 1, 0, 1, 1]], dtype=np.int8).T[None]
     afs = np.array([1])
     ctg = RawContig(het, afs, 100)
     res = phlash.fit([ctg], niter=2, num_particles=5, chunk_size=1, overlap=1)

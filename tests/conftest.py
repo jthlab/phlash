@@ -18,7 +18,8 @@ def rng(request):
 
 @fixture
 def data(rng):
-    return (rng.uniform(size=(10, 1000)) < 0.05).astype(np.int8)
+    ret = np.sum(rng.uniform(size=(10, 11, 100)) < 0.05, 2)
+    return np.stack([np.full_like(ret, 100), ret], 2).astype(np.int8)
 
 
 @fixture

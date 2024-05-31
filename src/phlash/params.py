@@ -4,7 +4,6 @@ from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-import jax.scipy as jsp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 
@@ -18,8 +17,7 @@ class PSMCParams(NamedTuple):
     d: Float[Array, "M"]
     u: Float[Array, "M"]
     v: Float[Array, "M"]
-    emis0: Float[Array, "M"]
-    emis1: Float[Array, "M"]
+    lam: Float[Array, "M"]
     pi: Float[Array, "M"]
 
     @property
@@ -33,14 +31,10 @@ class PSMCParams(NamedTuple):
     def from_dm(cls, dm: phlash.size_history.DemographicModel) -> "PSMCParams":
         "Initialize parameters from a demographic model"
         assert dm.M == 16, "require M=16"
-        u = dm.theta * dm.eta.ect()
-        emis0 = jnp.exp(-u)
-        emis1 = -jnp.expm1(-u)
+        lam = dm.theta * dm.eta.ect()
         pi = dm.eta.pi
         A = phlash.transition.transition_matrix(dm)
-        emis0, emis1, pi, A = jax.tree.map(
-            lambda a: a.clip(1e-20, 1.0 - 1e-20), (emis0, emis1, pi, A)
-        )
+        pi, A = jax.tree.map(lambda a: a.clip(1e-20, 1.0 - 1e-20), (pi, A))
         b, d, u = (jnp.diag(A, i) for i in [-1, 0, 1])
         v = A[0, 1:] / A[0, 1]
         ut = u / v
@@ -49,8 +43,7 @@ class PSMCParams(NamedTuple):
             d=d,
             u=jnp.append(ut, 0.0),
             v=jnp.insert(v, 0, 0.0),
-            emis0=emis0,
-            emis1=emis1,
+            lam=lam,
             pi=pi,
         )
 
@@ -60,10 +53,11 @@ class MCMCParams:
     pattern: jdc.Static[str]
     t_tr: jax.Array
     c_tr: jax.Array
-    rho_over_theta_tr: float
+    log_rho_over_theta: float
     theta: jdc.Static[float]
     alpha: jdc.Static[float]
     beta: jdc.Static[float]
+    window_size: jdc.Static[int]
 
     @classmethod
     def from_linear(
@@ -76,19 +70,20 @@ class MCMCParams:
         rho: float,
         alpha: float = 0.0,
         beta: float = 0.0,
+        window_size: int = 100,
     ) -> "MCMCParams":
         dtM = tM - t1
         t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])
         assert len(Pattern(pattern)) == len(c)  # one c per epoch
-        rho_over_theta_tr = jsp.special.logit((rho / theta - 0.1) / 9.9)
         return cls(
             pattern=pattern,
             c_tr=softplus_inv(c),
             t_tr=t_tr,
-            rho_over_theta_tr=rho_over_theta_tr,
+            log_rho_over_theta=jnp.log(rho / theta),
             theta=theta,
             alpha=alpha,
             beta=beta,
+            window_size=window_size,
         )
 
     def to_dm(self) -> phlash.size_history.DemographicModel:
@@ -109,8 +104,7 @@ class MCMCParams:
 
     @property
     def rho_over_theta(self):
-        # this transformation ensures that rho/theta is in [.1, 10]
-        return 0.1 + 9.9 * jsp.special.expit(self.rho_over_theta_tr)
+        return jnp.exp(self.log_rho_over_theta)
 
     @property
     def rho(self):
