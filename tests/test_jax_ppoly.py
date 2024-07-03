@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 import scipy
@@ -23,9 +24,9 @@ def q(p):
 
 
 @fixture
-def pconst():
-    x = np.r_[0.0, np.cumsum(np.random.rand(10)), np.inf]
-    c = np.random.rand(1, 11)
+def pconst(rng):
+    x = np.r_[0.0, np.cumsum(rng.uniform(size=10)), np.inf]
+    c = rng.uniform(size=(1, 11))
     return JaxPPoly(x=jnp.array(x), c=jnp.array(c))
 
 
@@ -55,13 +56,35 @@ def test_anti1(rng):
         np.testing.assert_allclose(t, R1(t))
 
 
-def test_exp_integral(pconst, qconst):
+def test_exp_integral(pconst, qconst, rng):
     from scipy.integrate import quad
 
-    for c in 0.01, 1, 10:
-        c *= np.random.rand()
-        i1 = pconst.scale(c).exp_integral()
+    for t in np.r_[0.0, rng.uniform(size=3), np.inf]:
+        const = np.random.normal()
+        y1 = pconst.exp_integral(t=t, const=const)
         R = qconst.antiderivative()
-        i2, err2 = quad(lambda x: np.exp(-c * R(x)), 0.0, R.x[-2], points=R.x[:-1])
-        i3, err3 = quad(lambda x: np.exp(-c * R(x)), R.x[-2], np.inf)
-        np.testing.assert_allclose(i1, i2 + i3, atol=err2 + err3)
+        if np.isinf(t):
+            y2a, erra = quad(
+                lambda x: np.exp(-R(x) + const), 0.0, R.x[-2], points=R.x[:-2]
+            )
+            y2b, errb = quad(lambda x: np.exp(-R(x) + const), R.x[-2], np.inf)
+            y2 = y2a + y2b
+            err = erra + errb
+        else:
+            i = max(0, np.searchsorted(R.x, t) - 1)
+            y2, err = quad(lambda x: np.exp(-R(x) + const), 0.0, t, points=R.x[:i])
+        np.testing.assert_allclose(y1, y2, atol=2 * err)
+
+
+def test_exp_integral_jittable(pconst):
+    # check that the function is jittable
+    f = jax.jit(pconst.exp_integral)
+    f()
+
+
+def test_scale_integrate(pconst):
+    p2 = pconst.scale(2.0)
+    R1 = pconst.antiderivative()
+    R2 = p2.antiderivative()
+    for t in np.random.rand(10):
+        np.testing.assert_allclose(R1(t), R2(t) / 2.0)
