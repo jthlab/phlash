@@ -41,10 +41,14 @@ class JaxPPoly(NamedTuple):
         e = jnp.concatenate([c1[:-1], d[None]])
         return JaxPPoly(x=self.x, c=e)
 
-    def exp_integral(self) -> float:
-        r"""Compute the integral $\int_0^inf exp[-R(t)] dt$ for
+    def exp_integral(self, t: float = jnp.inf, const: float = 0.0) -> float:
+        r"""Compute the integral $\int_0^t exp[-R(u) + const] du$ for
 
             R(t) = \int_0^s self(s) ds.
+
+        Args:
+            t: The upper limit of the integral.
+            const: A constant to add to the integrand.
 
         Returns:
             The value of the integral.
@@ -58,7 +62,7 @@ class JaxPPoly(NamedTuple):
         #    = \sum_{i=0}^{T - 1} exp(-I_i) (1 - exp(-a_i * dt_i) / a_i
         #
         assert self.c.ndim == 2
-        assert self.c.shape[0] == 1
+        assert self.c.shape[0] == 1  # piecewise constant
         a = self.c[0]
         dt = jnp.diff(self.x)[:-1]
         # to prevent nan's from infecting the gradients, we handle the last epoch
@@ -68,8 +72,13 @@ class JaxPPoly(NamedTuple):
         I = jnp.concatenate([z, jnp.cumsum(integrals)])  # noqa: E741
         exp_integrals = jnp.concatenate(
             [
-                jnp.exp(-I[:-1]) * -jnp.expm1(-a[:-1] * dt) / a[:-1],
-                jnp.exp(-I[-1:]) / a[-1:],
+                jnp.exp(-I[:-1] + const) * -jnp.expm1(-a[:-1] * dt) / a[:-1],
+                jnp.exp(-I[-1:] + const) / a[-1:],
             ]
         )
-        return exp_integrals.sum()
+        i = jnp.maximum(jnp.searchsorted(self.x, t, side="right") - 1, 0)
+        c = jnp.exp(-I[i] + const) * -jnp.expm1(-a[i] * (t - self.x[i])) / a[i]
+        mask = jnp.arange(len(self.x) - 1) < i
+        return jnp.where(
+            jnp.isinf(t), exp_integrals.sum(), (exp_integrals * mask).sum() + c
+        )
