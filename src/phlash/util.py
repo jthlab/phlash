@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 import jax.tree_util
+import numpy as np
+from scipy.interpolate import PPoly
 
 
 class Pattern:
@@ -47,3 +49,13 @@ def tree_unstack(tree):
 def softplus_inv(y):
     # y > 0
     return y + jnp.log1p(-jnp.exp(-y))
+
+
+def invert_cpwli(R: PPoly):
+    """Invert a continuous piecewise-linear increasing function."""
+    x = R.x
+    assert np.isinf(x[-1])
+    assert np.isclose(x[0], 0.0)
+    b, a = R.c
+    # the inverse func interpolates (R(x[i]), x[i]) for i = 0, 1, ..., n - 1
+    return PPoly(x=np.append(a, np.inf), c=np.array([1 / b, x[:-1]]), extrapolate=False)
