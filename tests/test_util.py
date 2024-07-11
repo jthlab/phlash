@@ -1,6 +1,7 @@
 import numpy as np
+from scipy.interpolate import PPoly
 
-from phlash.util import tree_stack, tree_unstack
+from phlash.util import invert_cpwli, tree_stack, tree_unstack
 
 
 def test_tree_stack():
@@ -18,3 +19,20 @@ def test_tree_unstack():
     assert tu[0]["b"].shape == (2,)
     assert tu[1]["a"].shape == (2,)
     assert tu[1]["b"].shape == (2,)
+
+
+def test_invert_cpwli(rng):
+    # construct continuous piecewise linear function increasing function
+    x = np.array([0.0, 1.0, 2.0, 3.0, np.inf])
+    c = rng.uniform(size=(1, 4))
+    R = PPoly(x=x, c=c).antiderivative()
+    Q = invert_cpwli(R)
+    # check that Q(R(x)) = x for random x
+    x = np.concatenate([rng.uniform(size=10), [0.0, 1.0, 2.0, 3.0, 100]])
+    np.testing.assert_allclose(Q(R(x)), x)
+    # check that inv(inv(R)) = R
+    R2 = invert_cpwli(Q)
+    np.testing.assert_allclose(R.x, R2.x)
+    np.testing.assert_allclose(R.c, R2.c)
+    # check that it returns nan outside the domain
+    assert np.isnan(Q(-1))
