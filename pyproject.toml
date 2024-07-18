@@ -60,23 +60,12 @@ source = "scm"
 [tool.pdm.dev-dependencies]
 dev = [
     "pytest>=8.0.0",
-    "flake8>=7.0.0",
-    "flake8-pyproject>=1.2.3",
+    "ruff>=0.5.3",
 ]
 
 [tool.isort]
 profile = "black"
 known_first_party = "phlash"
-
-[tool.flake8]
-# Some sane defaults for the code style checker flake8
-max_line_length = 88
-extend_ignore = ['E203', 'W503', 'F722', 'F821']
-# ^  Black-compatible
-#    E203 and W503 have edge cases handled by black
-exclude = ['.git', 'build', 'dist', 'venv', 'lib', 'docs', 'notebooks']
-# some environment variables need to be set before loading jax
-per-file-ignores = ['src/phlash/__init__.py:E402']
 
 [tool.coverage.run]
 branch = true
@@ -110,3 +99,6 @@ directory = "coverage_html_report"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.ruff.lint]
+select = ["NPY201"]
