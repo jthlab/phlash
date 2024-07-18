@@ -193,6 +193,7 @@ def fit(
             shape=(options.get("num_particles", 500),),
         )
     )
+    logger.trace("Initial particles: {}", initial_particles)
     state = svgd.init(initial_particles)
     # this function takes gradients steps.
     step = jit(svgd.step, static_argnames=["kern"])
