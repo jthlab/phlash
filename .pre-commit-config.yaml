@@ -16,6 +16,16 @@ repos:
   - id: mixed-line-ending
     args: ['--fix=auto']  # replace 'auto' with 'lf' to enforce Linux/Mac line endings or 'crlf' for Windows
 
+- repo: https://github.com/astral-sh/ruff-pre-commit
+  # Ruff version.
+  rev: v0.5.3
+  hooks:
+    # Run the linter.
+    - id: ruff
+      args: [ --fix ]
+    # Run the formatter.
+    - id: ruff-format
+
 ## If you want to automatically "modernize" your Python code:
 - repo: https://github.com/asottile/pyupgrade
   rev: v3.7.0
@@ -51,13 +61,6 @@ repos:
 #   hooks:
 #   - id: blacken-docs
 #     additional_dependencies: [black]
-
-- repo: https://github.com/PyCQA/flake8
-  rev: 6.1.0
-  hooks:
-  ## You can add flake8 plugins via `additional_dependencies`:
-  - id: flake8
-    additional_dependencies: [Flake8-pyproject]
 
 ## Check for misspells in documentation files:
 # - repo: https://github.com/codespell-project/codespell
