@@ -5,26 +5,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import scipy
-from pytest import fixture
 from scipy.integrate import quad
 
 from phlash.size_history import SizeHistory, _expm1inv, _tv_helper, _W_matrix
-
-
-@fixture
-def random_eta(rng):
-    def f():
-        log_dt, log_c = rng.normal(size=(2, 10))
-        t = np.exp(log_dt).cumsum()
-        t[0] = 0.0
-        return SizeHistory(t=jnp.array(t), c=jnp.exp(log_c))
-
-    return f
-
-
-@fixture
-def eta(random_eta):
-    return random_eta()
 
 
 def test_pi():

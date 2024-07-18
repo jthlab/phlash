@@ -54,7 +54,6 @@ def softplus_inv(y):
 def invert_cpwli(R: PPoly):
     """Invert a continuous piecewise-linear increasing function."""
     x = R.x
-    assert np.isinf(x[-1])
     assert np.isclose(x[0], 0.0)
     b, a = R.c
     # the inverse func interpolates (R(x[i]), x[i]) for i = 0, 1, ..., n - 1
