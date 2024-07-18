@@ -7,7 +7,6 @@ from concurrent.futures import as_completed
 from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
-import dinopy
 import numpy as np
 import pysam
 import tqdm.auto as tqdm
@@ -116,6 +115,7 @@ class Contig(ABC):
 @dataclass(frozen=True)
 class RawContig(Contig):
     "A contig with pre-computed het matrix and afs."
+
     het_matrix: Int8[Array, "N L"]
     afs: Int[Array, "n"]
     window_size: int
@@ -137,18 +137,16 @@ class RawContig(Contig):
             set to 100bp.
         """
         # parse psmcfa file
-        far = dinopy.FastaReader(psmcfa_path)
-        for record in far.entries():
-            contig_name = record.name
-            logger.debug(
-                f"Reading contig {contig_name.decode('ascii')} from {psmcfa_path}"
-            )
-            seq = np.frombuffer(record.sequence, dtype="c")
-            data = (seq == b"K").astype(np.int8)
-            data[seq == b"N"] = -1  # account for missing data
-            (L,) = data.shape
-            afs = np.ones(1)
-            yield cls(het_matrix=data[None], afs=afs, window_size=window_size)
+        with pysam.FastxFile(psmcfa_path) as fx:
+            for record in fx:
+                contig_name = record.name
+                logger.debug(f"Reading contig {contig_name} from {psmcfa_path}")
+                seq = np.array(record.sequence, dtype="c")
+                data = (seq == b"K").astype(np.int8)
+                data[seq == b"N"] = -1  # account for missing data
+                (L,) = data.shape
+                afs = np.ones(1)
+                yield cls(het_matrix=data[None], afs=afs, window_size=window_size)
 
     @property
     def N(self):
