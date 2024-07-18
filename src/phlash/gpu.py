@@ -178,6 +178,7 @@ class _PSMCKernelBase:
     def __call__(
         self, pp: PSMCParams, index: int, grad: bool, barrier: threading.Barrier
     ) -> tuple[float, PSMCParams]:
+        logger.trace("pp={}, index={}, grad={}", pp, index, grad)
         M = self._M
         N = self._N
         added_S = False
@@ -292,6 +293,7 @@ class _PSMCKernelBase:
             ASSERT_DRV(err)
         (err,) = cuda.cuStreamSynchronize(self._stream)
         ASSERT_DRV(err)
+        assert np.all(ll < 0)
         if grad:
             dll = PSMCParams(
                 b=dlog[..., 0, :],
@@ -304,6 +306,7 @@ class _PSMCKernelBase:
                 emis1=dlog[..., 5, :],
                 pi=dlog[..., 6, :],
             )
+            logger.trace("ll={}, dll={}", ll, dll)
             ret = (ll, dll)
         else:
             ret = ll
