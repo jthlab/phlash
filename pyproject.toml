@@ -109,3 +109,11 @@ directory = "coverage_html_report"
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
+
+[tool.ruff.lint]
+select = ["NPY201"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+]
