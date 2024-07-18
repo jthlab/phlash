@@ -24,7 +24,6 @@ dependencies = [
     "tszip<1.0.0,>=0.2.3",
     "jaxtyping<1.0.0,>=0.2.25",
     "pulp>=2.8.0",
-    "dinopy>=3.0.0",
     "pysam>=0.22.1",
 ]
 requires-python = ">=3.10,<4.0"
