@@ -25,12 +25,14 @@ from jaxtyping import Array, Int, Int8
 from loguru import logger
 from scipy.interpolate import PPoly
 
+from phlash.ld import calc_ld
 from phlash.util import invert_cpwli
 
 
 class Contig(NamedTuple):
     hets: Int8[Array, "N L 2"]
     afs: Int[Array, "n"]
+    ld: dict[tuple[float, float], float]
     window_size: int
 
     @property
@@ -133,6 +135,7 @@ def _from_iter(
     N: int,
     window_size: int = 100,
     genetic_map: msprime.RateMap = None,
+    ld_buckets: np.ndarray = None,
     mask: list[tuple[int, int]] = None,
 ) -> Contig:
     """Construct a contig from an iterator of records.
@@ -207,7 +210,20 @@ def _from_iter(
                 1  # number of derived alleles, shifted to start at 1
             )
 
-    return Contig(hets=hets, afs=afs, window_size=w)
+        # ld calculations
+        if genetic_map is not None:
+            genetic_pos.append(R(rec["pos"]))
+            genotypes.append(gts)
+
+    ret = Contig(hets=hets, afs=afs, ld=None, window_size=w)
+
+    if genetic_map is not None:
+        if ld_buckets is None:
+            ld_buckets = np.geomspace(1e-5, 2e-3, 12)
+        ld = calc_ld(np.array(genetic_pos), np.array(genotypes), ld_buckets)
+        ret = ret._replace(ld=ld)
+
+    return ret
 
 
 def _from_ts(
@@ -218,6 +234,7 @@ def _from_ts(
     right: int = None,
     window_size: int = 100,
     genetic_map: msprime.RateMap | float = None,
+    ld_buckets: np.ndarray = None,
     mask: list[tuple[int, int]] = None,
     progress: bool = True,
 ) -> Contig:
@@ -266,6 +283,7 @@ def _from_vcf(
     sample_ids: list[str],
     window_size: int = 100,
     genetic_map: msprime.RateMap | float = None,
+    ld_buckets: np.ndarray = None,
     mask: list[tuple[int, int]] = None,
     progress: bool = True,
 ) -> Contig:
@@ -315,6 +333,7 @@ def _from_vcf(
         N=len(sample_ids),
         window_size=window_size,
         genetic_map=genetic_map,
+        ld_buckets=ld_buckets,
         mask=mask,
     )
 
@@ -348,7 +367,7 @@ def _from_psmcfa(psmcfa_path: str, contig_name: str, window_size: int = 100) -> 
             n[seq == b"N"] = 0  # account for missing data
             data = np.stack([n, d], 1)[None]
             afs = np.ones(1)
-            return Contig(hets=data, afs=afs, window_size=window_size)
+            return Contig(hets=data, afs=afs, ld=None, window_size=window_size)
     raise ValueError(
         f"No contig named '{contig_name}' was encountered in {psmcfa_path}"
     )
@@ -420,4 +439,15 @@ def init_mcmc_data(
     assert len({ch.shape[-1] for ch in chunks}) == 1
     assert all(ch.ndim == 3 for ch in chunks)
     assert all(ch.shape[2] == 2 for ch in chunks)
-    return np.sum(afss, 0), np.concatenate(chunks, 0)
+    # merge lds
+    lds = {}
+    for ds in data:
+        for k, v in (ds.ld or {}).items():
+            lds.setdefault(k, []).append(v)
+    for k in lds:
+        d = jax.tree.map(lambda *a: np.array(a), *lds[k])
+        mu = np.average(d["mu"], weights=d["n"])
+        # pooled variance
+        sigma2 = np.average(d["sigma2"], weights=d["n"] - 1)
+        lds[k] = {"mu": mu, "sigma2": sigma2}
+    return np.sum(afss, 0), np.concatenate(chunks, 0), lds
