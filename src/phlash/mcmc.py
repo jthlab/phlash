@@ -95,7 +95,7 @@ def fit(
     # too much memory. set num_workers=1 to process the data sequentially.
     num_workers = options.get("num_workers")
     logger.info("Loading data")
-    afs, chunks = init_mcmc_data(
+    afs, chunks, lds = init_mcmc_data(
         data, window_size, overlap, chunk_size, max_samples, num_workers
     )
     logger.debug("chunks.shape={}", chunks.shape)

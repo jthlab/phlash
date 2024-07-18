@@ -48,7 +48,7 @@ class JaxPPoly(NamedTuple):
 
         Args:
             t: The upper limit of the integral.
-            const: A constant to add to the integrand.
+            const: A constant to add to the exponent.
 
         Returns:
             The value of the integral.
@@ -77,7 +77,10 @@ class JaxPPoly(NamedTuple):
             ]
         )
         i = jnp.maximum(jnp.searchsorted(self.x, t, side="right") - 1, 0)
-        c = jnp.exp(-I[i] + const) * -jnp.expm1(-a[i] * (t - self.x[i])) / a[i]
+        # c = jnp.exp(-I[i] + const) * -jnp.expm1(-a[i] * (t - self.x[i])) / a[i]
+        c = (
+            jnp.exp(-I[i] + const) - jnp.exp(-(I[i] + a[i] * (t - self.x[i])) + const)
+        ) / a[i]
         mask = jnp.arange(len(self.x) - 1) < i
         return jnp.where(
             jnp.isinf(t), exp_integrals.sum(), (exp_integrals * mask).sum() + c

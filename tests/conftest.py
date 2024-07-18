@@ -1,14 +1,25 @@
-import os.path
+from pathlib import Path
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 from pytest import fixture
 
 from phlash.kernel import get_kernel
 from phlash.params import PSMCParams
-from phlash.size_history import DemographicModel
+from phlash.size_history import DemographicModel, SizeHistory
 
 jax.config.update("jax_enable_x64", True)
+
+
+@fixture
+def test_assets():
+    return Path(__file__).parent / "fixtures"
+
+
+@fixture
+def psmcfa_file(test_assets):
+    return test_assets / "sample.psmcfa"
 
 
 @fixture(params=[0, 1, 2])
@@ -38,5 +49,16 @@ def kern(data):
 
 
 @fixture
-def psmcfa_file():
-    return os.path.join(os.path.dirname(__file__), "fixtures", "sample.psmcfa")
+def random_eta(rng):
+    def f():
+        log_dt, log_c = rng.normal(size=(2, 10))
+        t = np.exp(log_dt).cumsum()
+        t[0] = 0.0
+        return SizeHistory(t=jnp.array(t), c=jnp.exp(log_c))
+
+    return f
+
+
+@fixture
+def eta(random_eta):
+    return random_eta()
