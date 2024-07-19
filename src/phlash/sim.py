@@ -6,6 +6,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import warnings
 from concurrent.futures import as_completed
 from typing import TypedDict
 
@@ -85,10 +86,11 @@ def stdpopsim_dataset(
         chrom.id = chrom_id
     ds = {}
     return_vcf = options.get("return_vcf")
+    N0 = _get_N0(model, populations)
     with JaxCpuProcessPoolExecutor(max_workers=options.get("num_threads")) as pool:
         futs = {
             pool.submit(
-                _simulate, model, chrom, pop_dict, seed, use_scrm, return_vcf
+                _simulate, model, N0, chrom, pop_dict, seed, use_scrm, return_vcf
             ): chrom_id
             for chrom_id, chrom in chroms.items()
         }
@@ -116,7 +118,9 @@ def compute_truth(
     else:
         assert len(populations) == 2
         d = {p: 1 for p in populations}
-    c, _ = md.coalescence_rate_trajectory(t, d)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        c, _ = md.coalescence_rate_trajectory(t, d)
     return SizeHistory(t=t, c=c)
 
 
@@ -130,6 +134,7 @@ def _get_N0(dm: stdpopsim.DemographicModel, pop_dict: dict) -> float:
 
 def _params_for_sim(
     model: stdpopsim.DemographicModel,
+    N0: float,
     chrom: stdpopsim.Contig,
     pop_dict: dict,
 ):
@@ -139,7 +144,6 @@ def _params_for_sim(
     else:
         assert len(active_pops) == 2
         pd = {p: 1 for p in active_pops}
-    N0 = _get_N0(model, pd)
     r = chrom.recombination_map.rate
     assert len(r) == 1
     r = r.item()
@@ -150,13 +154,14 @@ def _params_for_sim(
 
 def _simulate(
     model: stdpopsim.DemographicModel,
+    N0: float,
     chrom: stdpopsim.Contig,
     pop_dict: dict,
     seed: int,
     use_scrm: bool,
     return_vcf: bool,
 ) -> Contig:
-    pd = _params_for_sim(model, chrom, pop_dict)
+    pd = _params_for_sim(model, N0, chrom, pop_dict)
     if use_scrm or (use_scrm is None and pd["rho"] > 1e5 and return_vcf is not False):
         logger.debug(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
