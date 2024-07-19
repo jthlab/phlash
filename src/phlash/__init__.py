@@ -4,7 +4,8 @@ import os
 import warnings
 
 # ignore some annoying warnings that show up in the packages we rely on
-warnings.filterwarnings(action="ignore", module="stdpopsim", category=FutureWarning)
+for w in (FutureWarning, UserWarning):
+    warnings.filterwarnings(action="ignore", module="stdpopsim", category=w)
 
 # this needs to occur before jax loads
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
