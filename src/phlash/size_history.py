@@ -333,10 +333,8 @@ class DemographicModel(NamedTuple):
         Returns:
             Rescaled demographic model.
         """
-        # W = 4 N0 mu = 4 * 1e-8 * 1e4 = 4e-4
-        # N0 = 1
-        # N1 = 1e4
-        N1_N0 = self.theta / mu  # theta = 1e-4, mu = 1e-8, N1_N0 = 1e4
+        # the rate of mutation per unit of time in our model is theta/2
+        N1_N0 = (self.theta / 2) / mu
         t = N1_N0 * self.eta.t
         c = self.eta.c / N1_N0
         eta = SizeHistory(t=t, c=c)
