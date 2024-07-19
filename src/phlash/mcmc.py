@@ -151,7 +151,7 @@ def fit(
     # it seems to be numerically better (estimates are more accurate) to work in the
     # coalescent scaling. perhaps because all the calculations are "O(1)" instead of
     # "O(huge number) * O(tiny number)" ...
-    theta = watterson / 4  # i.e., N0=1
+    theta = watterson  # i.e., N0=1
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
         if mutation_rate is not None:
