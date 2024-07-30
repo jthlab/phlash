@@ -163,3 +163,10 @@ def test_tv_bug():
         t_max *= 2
     I2, err2 = quad(f, t[-1], t_max)
     np.testing.assert_allclose(tv1, I1 + I2)
+
+
+def test_to_demes(eta):
+    g = eta.to_demes()
+    assert g is not None
+    assert len(g.demes) == 1
+    assert len(g.demes[0].epochs) == len(eta.t)
