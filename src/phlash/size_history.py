@@ -34,17 +34,18 @@ class SizeHistory(NamedTuple):
     def to_demes(self, deme_name: str = "pop") -> demes.Graph:
         b = demes.Builder()
         epochs = []
-        for (t0, t1), Ne in zip(pairwise(self.t), self.Ne):
+        for ti, Ne in zip(self.t, self.Ne):
+            ti = float(ti)
+            Ne = float(Ne)
             epochs.append(
                 {
-                    "start_time": t1,
-                    "end_time": t0,
+                    "end_time": ti,
                     "start_size": Ne,
                     "end_size": Ne,
                     "size_function": "constant",
                 }
             )
-        b.add_deme(deme_name, epochs=epochs)
+        b.add_deme(deme_name, epochs=epochs[::-1])
         return b.resolve()
 
     def draw(self, ax=None, density: bool = False, c: float = 1.0, **kwargs) -> None:
