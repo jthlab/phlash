@@ -31,6 +31,15 @@ def _check_jax_gpu():
 _particles = None  # for debugging
 
 
+def _afs_transform(afs: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
+    ret = {}
+    for n, afs_n in afs.items():
+        T1 = fold_transform(afs_n.shape[0] + 1)
+        T2 = bws_transform(T1 @ afs_n)
+        ret[n] = T2 @ T1
+    return ret
+
+
 def fit(
     data: list[Contig],
     test_data: Contig = None,
@@ -110,9 +119,7 @@ def fit(
     else:
         # by default, fold the afs and apply a 90% binning strategy as in
         # Bhaskar-Wang-Song
-        T1 = fold_transform(len(afs) + 1)
-        T2 = bws_transform(T1 @ afs)
-        afs_transform = T2 @ T1
+        afs_transform = _afs_transform(afs)
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -213,13 +220,12 @@ def fit(
     # if there is a test set, define elpd() function for computing expected
     # log-predictive density. used to gauge convergence.
     if test_data:
-        d = test_data.get_data(window_size)
-        test_afs = d["afs"]
-        test_data = d["het_matrix"][:max_samples]
-        N_test = test_data.shape[0]
+        test_afs = test_data.afs
+        test_hets = test_data.hets[:max_samples]
+        N_test = test_hets.shape[0]
         test_kern = get_kernel(
             M=M,
-            data=np.ascontiguousarray(d["het_matrix"]),
+            data=np.ascontiguousarray(test_hets),
             double_precision=False,
         )
 
@@ -234,7 +240,7 @@ def fit(
                     kern=test_kern,
                     warmup=None,
                     afs=test_afs,
-                    afs_transform=afs_transform,
+                    afs_transform=_afs_transform(test_afs),
                 )
 
             return _elpd_ll(mcps).mean()

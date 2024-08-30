@@ -28,7 +28,7 @@ def log_density(
     warmup: Int8[Array, "c ell"],
     kern: "phlash.gpu.PSMCKernel",
     afs: Int64[Array, "n"],
-    afs_transform: Float[Array, "m n"] = None,
+    afs_transform: dict[int, Float[Array, "m n"]] = None,
 ) -> float:
     r"""
     Computes the log density of a statistical model by combining the contributions from
@@ -60,19 +60,15 @@ def log_density(
     pps = vmap(lambda pi: pp._replace(pi=pi))(pis)
     l1 = log_prior(mcp)
     l2 = vmap(kern.loglik, (0, 0))(pps, inds).sum()
+    l3 = 0.0
     if afs is not None:
-        n = len(afs) + 1
-        if afs_transform is None:
-            T = jnp.eye(n - 1)
-        else:
-            T = afs_transform
-        assert T.ndim == 2
-        assert T.shape[1] == n - 1
-        etbl = dm.eta.etbl(n)
-        esfs = etbl / etbl.sum()
-        l3 = xlogy(T @ afs, T @ esfs).sum()
-    else:
-        l3 = 0.0
+        for n in afs:
+            T = afs_transform.get(n, jnp.eye(n - 1))
+            assert T.ndim == 2
+            assert T.shape[1] == n - 1
+            etbl = dm.eta.etbl(n)
+            esfs = etbl / etbl.sum()
+            l3 += xlogy(T @ afs[n], T @ esfs).sum()
     ll = jnp.array([l1, l2, l3])
     ret = jnp.dot(c, ll)
     return jnp.where(jnp.isfinite(ret), ret, -jnp.inf)

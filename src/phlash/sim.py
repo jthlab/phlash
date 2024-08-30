@@ -15,7 +15,7 @@ import numpy as np
 import stdpopsim
 from loguru import logger
 
-from phlash.data import Contig, TreeSequenceContig, VcfContig
+from phlash.data import Contig
 from phlash.mp import JaxCpuProcessPoolExecutor
 from phlash.size_history import DemographicModel, SizeHistory
 
@@ -179,7 +179,10 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
         return ts.as_vcf(
             individual_names=samples, position_transform=pt, contig_id=chrom.id
         )
-    return TreeSequenceContig(ts)
+    nodes = list(ts.nodes())
+    return Contig.from_ts(
+        ts=ts, nodes=[(2 * i, 2 * i + 1) for i, _ in enumerate(ts.individuals())]
+    )
 
 
 def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
