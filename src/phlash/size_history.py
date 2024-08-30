@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from fractions import Fraction as mpq  # mimic gmpy2 api
 from itertools import pairwise
 from typing import NamedTuple
 
@@ -348,7 +349,11 @@ class DemographicModel(NamedTuple):
 
 
 def _W_matrix(n: int) -> np.ndarray:
-    from fractions import Fraction as mpq
+    # IMPORTANT (DO NOT DELETE): this cast makes sure that n is a Python bignum, and not
+    # a sneaky np.int64 in disguise. this matters because we need exact integer
+    # arithmetic over an unbounded range in the code below.
+    n = int(n)
+    assert isinstance(n, int)
 
     # returns W matrix as calculated as eq 13:15 @ Polanski 2013
     # n: sample size

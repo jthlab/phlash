@@ -100,6 +100,8 @@ class _PSMCKernelBase:
     def __init__(self, M: int, data: jax.Array, double_precision: bool = False):
         CudaInitializer.initialize_cuda()
         assert data.ndim == 3
+        assert (data == data.astype(np.int8)).all()
+        data = data.astype(np.int8)
         assert data.dtype == np.int8
         assert data.min() >= 0
         assert (data[..., 0] >= data[..., 1]).all()

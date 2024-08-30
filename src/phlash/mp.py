@@ -7,6 +7,9 @@ def _set_jax_to_cpu():
     os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
     os.environ["JAX_PLATFORM_NAME"] = "cpu"
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    import jax
+
+    jax.config.update("jax_platforms", "cpu")
 
 
 class JaxCpuProcessPoolExecutor(ProcessPoolExecutor):
