@@ -105,3 +105,6 @@ markers = [
 
 [tool.ruff.lint]
 select = ["NPY201"]
+
+[tool.black]
+line-length = 88
