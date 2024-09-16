@@ -49,12 +49,6 @@ repos:
   hooks:
   - id: isort
 
-- repo: https://github.com/psf/black
-  rev: 23.10.0
-  hooks:
-  - id: black
-    language_version: python3
-
 ## If like to embrace black styles even in the docs:
 # - repo: https://github.com/asottile/blacken-docs
 #   rev: v1.13.0
