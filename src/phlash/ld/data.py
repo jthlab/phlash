@@ -13,6 +13,12 @@ def calc_ld(genetic_pos, genotypes, r_buckets):
     genotypes = np.asarray(genotypes)
     genetic_pos = np.asarray(genetic_pos)
 
+    # filter to only biallelic genotypes since that is what is modeled by the LD moments
+    # functions
+    bi = genotypes.max(axis=(1, 2)) == 1
+    genotypes = genotypes[bi]
+    genetic_pos = genetic_pos[bi]
+
     @jax.vmap
     def count_pairs(gts_x, gts_y):
         def c(gt_x, gt_y):
