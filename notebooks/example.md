@@ -100,7 +100,7 @@ If memory consumption is a limiting factor on your machine, you may consider usi
 
 #### Rolling your own data
 
-For use cases that are not covered here, you may directly import your own data using lower-level classes that are built into `phlash`. See [contig.py](../src/phlash/contig.py) for more information.
+For use cases that are not covered here, you may directly import your own data using lower-level classes that are built into `phlash`. See [data.py](../src/phlash/data.py) for more information.
 
 
 ### Fitting the model
