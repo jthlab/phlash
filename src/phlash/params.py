@@ -100,7 +100,7 @@ class MCMCParams:
 
     def to_pp(self) -> PSMCParams:
         dm = self.to_dm()
-        dm = dm._replace(theta=self.window_size * dm.theta, rho=self.rho * dm.rho)
+        dm = dm._replace(rho=self.window_size * dm.rho)
         return PSMCParams.from_dm(dm)
 
     @property
