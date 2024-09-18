@@ -1,6 +1,6 @@
 import multiprocessing
 import os
-from concurrent.futures import Executor, Future, ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures import Executor, Future, ProcessPoolExecutor
 from threading import Lock
 
 
@@ -50,3 +50,6 @@ class DummyExecutor(Executor):
 
 if os.environ.get("PHLASH_DISABLE_MP"):
     JaxCpuProcessPoolExecutor = DummyExecutor
+
+
+pool = JaxCpuProcessPoolExecutor()

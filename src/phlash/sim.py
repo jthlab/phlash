@@ -15,8 +15,8 @@ import numpy as np
 import stdpopsim
 from loguru import logger
 
+import phlash.mp
 from phlash.data import Contig
-from phlash.mp import JaxCpuProcessPoolExecutor
 from phlash.size_history import DemographicModel, SizeHistory
 
 
@@ -87,16 +87,15 @@ def stdpopsim_dataset(
     ds = {}
     return_vcf = options.get("return_vcf")
     N0 = _get_N0(model, populations)
-    with JaxCpuProcessPoolExecutor(max_workers=options.get("num_threads")) as pool:
-        futs = {
-            pool.submit(
-                _simulate, model, N0, chrom, pop_dict, seed, use_scrm, return_vcf
-            ): chrom_id
-            for chrom_id, chrom in chroms.items()
-        }
-        for f in as_completed(futs):
-            chrom_id = futs[f]
-            ds[chrom_id] = f.result()
+    futs = {
+        phlash.mp.pool.submit(
+            _simulate, model, N0, chrom, pop_dict, seed, use_scrm, return_vcf
+        ): chrom_id
+        for chrom_id, chrom in chroms.items()
+    }
+    for f in as_completed(futs):
+        chrom_id = futs[f]
+        ds[chrom_id] = f.result()
     true_eta = compute_truth(model, list(populations))
     true_dm = DemographicModel(eta=true_eta, theta=mu, rho=None)
     return {"data": ds, "truth": true_dm}
