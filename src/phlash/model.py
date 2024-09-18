@@ -48,8 +48,7 @@ def log_density(
         The log density, or negative infinity where the result is not finite.
     """
     dm = mcp.to_dm()
-    dm = dm._replace(rho=dm.rho * mcp.window_size)
-    pp = PSMCParams.from_dm(dm)
+    pp = mcp.to_pp()
     if warmup is None:
         pis = vmap(lambda _: pp.pi)(inds)  # (I, M)
     else:
