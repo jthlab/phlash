@@ -103,7 +103,7 @@ class SizeHistory(NamedTuple):
             c.append((-np.log1p(-p_i * np.exp(R))) / dt)
             R += c[-1] * dt
         # coalescent rate in last period is not identifiable from this data.
-        c.append(1.0)
+        c.append(c[-1])
         return cls(t=jnp.array(t), c=jnp.array(c))
 
     @property
