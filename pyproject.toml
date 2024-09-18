@@ -27,6 +27,7 @@ dependencies = [
     "pysam>=0.22.1",
     "scienceplots>=2.1.1",
     "quadax>=0.2.1",
+    "numba>=0.60.0",
 ]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
@@ -104,7 +105,7 @@ markers = [
 ]
 
 [tool.ruff.lint]
-select = ["NPY201"]
+select = ["E", "F"]
 
 [tool.black]
 line-length = 88

@@ -2,17 +2,28 @@ from functools import wraps
 from itertools import combinations_with_replacement as cwr
 from itertools import permutations, product
 
+import numba
 import numpy as np
 
 
 # from fractions import Fraction
+@numba.jit
 def Fraction(p, q):
     return p / q
 
 
+@numba.jit(nogil=True)
 def D(counts):
-    n1, n2, n3, n4, n5, n6, n7, n8, n9 = counts
-    nd = counts.sum()
+    n1 = counts[0]
+    n2 = counts[1]
+    n3 = counts[2]
+    n4 = counts[3]
+    n5 = counts[4]
+    n6 = counts[5]
+    n7 = counts[6]
+    n8 = counts[7]
+    n9 = counts[8]
+    nd = np.sum(counts)
     numer = (
         -Fraction(n2 * n4, 4)
         - Fraction(n3 * n4, 2)
@@ -40,9 +51,18 @@ def D(counts):
 Dhat = D
 
 
+@numba.jit(nogil=True)
 def D2(counts):
-    n1, n2, n3, n4, n5, n6, n7, n8, n9 = counts
-    n = counts.sum()
+    n1 = counts[0]
+    n2 = counts[1]
+    n3 = counts[2]
+    n4 = counts[3]
+    n5 = counts[4]
+    n6 = counts[5]
+    n7 = counts[6]
+    n8 = counts[7]
+    n9 = counts[8]
+    n = np.sum(counts)
     numer = (
         Fraction(
             n2 * n4
@@ -153,9 +173,18 @@ def D2(counts):
     return 4.0 * (numer / denom)
 
 
+@numba.jit(nogil=True)
 def Dz(counts):
-    n1, n2, n3, n4, n5, n6, n7, n8, n9 = counts
-    n = counts.sum()
+    n1 = counts[0]
+    n2 = counts[1]
+    n3 = counts[2]
+    n4 = counts[3]
+    n5 = counts[4]
+    n6 = counts[5]
+    n7 = counts[6]
+    n8 = counts[7]
+    n9 = counts[8]
+    n = np.sum(counts)
     numer = Fraction(
         -(n2 * n4)
         + 3 * n1 * n2 * n4
@@ -282,9 +311,18 @@ def Dz(counts):
     return 2.0 * (numer / denom)
 
 
+@numba.jit(nogil=True)
 def pi2(counts):
-    n1, n2, n3, n4, n5, n6, n7, n8, n9 = counts
-    n = counts.sum()
+    n1 = counts[0]
+    n2 = counts[1]
+    n3 = counts[2]
+    n4 = counts[3]
+    n5 = counts[4]
+    n6 = counts[5]
+    n7 = counts[6]
+    n8 = counts[7]
+    n9 = counts[8]
+    n = np.sum(counts)
     numer = (n1 + n2 + n3 + n4 / 2.0 + n5 / 2.0 + n6 / 2.0) * (
         n1 + n2 / 2.0 + n4 + n5 / 2.0 + n7 + n8 / 2.0
     ) * (n2 / 2.0 + n3 + n5 / 2.0 + n6 + n8 / 2.0 + n9) * (
