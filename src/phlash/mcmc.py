@@ -181,6 +181,7 @@ def fit(
             theta=theta,
             alpha=options.get("alpha", 0.0),
             beta=options.get("beta", 0.0),
+            window_size=window_size,
         )
     assert isinstance(init, MCMCParams)
     opt = optax.amsgrad(learning_rate=options.get("learning_rate", 0.1))

@@ -98,6 +98,11 @@ class MCMCParams:
             eta=eta, theta=self.theta, rho=self.rho
         )
 
+    def to_pp(self) -> PSMCParams:
+        dm = self.to_dm()
+        dm = dm._replace(theta=self.window_size * dm.theta, rho=self.rho * dm.rho)
+        return PSMCParams.from_dm(dm)
+
     @property
     def M(self):
         return Pattern(self.pattern).M
