@@ -1,5 +1,7 @@
 "Bayesian inference of ancestral size history."
 
+# ruff: noqa: E402
+
 import os
 import warnings
 
@@ -15,13 +17,13 @@ import jax
 
 jax.config.update("jax_enable_x64", True)
 
-from phlash.data import contig
+from phlash.data import Contig
 from phlash.mcmc import fit
 from phlash.plot import plot_posterior
 from phlash.psmc import psmc
 from phlash.size_history import DemographicModel, SizeHistory
 
-__all__ = ["fit", "contig", "psmc", "DemographicModel", "SizeHistory", "plot_posterior"]
+__all__ = ["fit", "Contig", "psmc", "DemographicModel", "SizeHistory", "plot_posterior"]
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`
