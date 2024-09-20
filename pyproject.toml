@@ -106,6 +106,8 @@ markers = [
 
 [tool.ruff.lint]
 select = ["E", "F"]
+ignore = ["F722"]
+
 
 [tool.black]
 line-length = 88
