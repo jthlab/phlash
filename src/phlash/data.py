@@ -1,37 +1,40 @@
 "Classes for importing data"
 
-import itertools as it
-import operator
-import re
 import subprocess
-from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from concurrent.futures import as_completed
-from dataclasses import asdict, dataclass, field
-from functools import lru_cache, partial, reduce
 from typing import NamedTuple
 
 import jax
-import jax.numpy as jnp
 import msprime
 import numpy as np
 import pysam
-import scipy
 import tqdm.auto as tqdm
 import tskit
-import tszip
-from intervaltree import Interval, IntervalTree
+from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
 from scipy.interpolate import PPoly
 
 from phlash.ld import calc_ld
-from phlash.util import invert_cpwli
 
 
 class Contig(NamedTuple):
-    hets: Int8[Array, "N L 2"]
-    afs: Int[Array, "n"]
+    """Container for genetic variation data.
+
+    This class supports VCF files (`.vcf`, `.vcf.gz`, `.bcf`), tree sequence files
+    (`.trees`, `.ts`), and compressed tree sequence files (`.tsz`, `.tszip`). It
+    requires different handling and parameters based on the file type.
+
+    Examples:
+    >>> Contig.from_vcf(vcf_path="example.vcf.gz",
+                        samples=["sample1", "sample2"],
+                        region="chr1:1000-5000")
+    >>> ts = tskit.load("example.trees")
+    >>> Contig.from_ts(ts=ts, nodes=[(0, 1), (2, 3)])
+    """
+
+    hets: Int8[Array, "N L 2"]  # noqa: F722
+    afs: Int[Array, "n"]  # noqa: F821
     ld: dict[tuple[float, float], float]
     window_size: int
 
@@ -43,89 +46,6 @@ class Contig(NamedTuple):
         return _chunk_het_matrix(
             het_matrix=self.hets, overlap=overlap, chunk_size=chunk_size
         )
-
-
-def contig(
-    src: str | tskit.TreeSequence,
-    samples: list[str] | list[tuple[int, int]],
-    region: str = None,
-    genetic_map: msprime.RateMap = None,
-) -> Contig:
-    """
-    Constructs and returns a Contig object based on the source file and specified
-    parameters.
-
-    This function supports VCF files (`.vcf`, `.vcf.gz`, `.bcf`), tree sequence files
-    (`.trees`, `.ts`), and compressed tree sequence files (`.tsz`, `.tszip`). It
-    requires different handling and parameters based on the file type.
-
-    For VCF files, a bcftools region string must be passed in the `region` parameter.
-    The function will parse this string to construct a VcfContig object.
-
-    For tree sequence files and their compressed versions, the `region` parameter is
-    not supported, and the function constructs a TreeSequenceContig object.
-
-    Parameters:
-    - src: Path to the source file, or a tskit.TreeSequence.
-    - samples: A list of samples or a list of sample intervals.
-    - region: A string specifying the genomic region, required for VCF files.
-      Format should be "contig:start-end" (e.g., "chr1:1000-5000").
-    - genetic_map: A msprime.RateMap object to use for genetic map information.
-
-    Returns:
-    - Contig: A Contig object which can be either VcfContig or TreeSequenceContig based
-      on the input file type.
-
-    Raises:
-    - ValueError: If the region is not provided or incorrectly formatted for VCF files,
-      or if region is provided for tree sequence files. Also raised if loading the file
-      fails for any supported format.
-
-    Examples:
-    - contig("example.vcf.gz", samples=["sample1", "sample2"], region="chr1:1000-5000")
-    - contig("example.trees", samples=[(1, 100), (101, 200)])
-
-    Note:
-    - See the documentation of VcfContig and TreeSequenceContig for more details on
-    these classes.
-    """
-    if isinstance(src, str) and any(
-        src.endswith(x) for x in [".vcf", ".vcf.gz", ".bcf"]
-    ):
-        if region is None or not re.match(r"\w+:\d+-\d+", region):
-            raise ValueError(
-                "VCF files require passing in a bcftools region string. "
-                "See docstring for examples."
-            )
-        c, intv = region.split(":")
-        a, b = map(int, intv.split("-"))
-        try:
-            return VcfContig(
-                src, samples=samples, contig=c, interval=(a, b), genetic_map=genetic_map
-            )
-        except Exception as e:
-            raise ValueError(f"Trying to load {src} as a VCF failed") from e
-
-    if isinstance(src, tskit.TreeSequence):
-        ts = src
-    elif src.endswith(".trees") or src.endswith(".ts"):
-        try:
-            ts = tskit.load(src)
-        except Exception as e:
-            raise ValueError(f"Trying to load {src} as a tree sequence failed") from e
-    elif src.endswith(".tsz") or src.endswith(".tszip"):
-        try:
-            ts = tszip.decompress(src)
-        except Exception as e:
-            raise ValueError(
-                f"Trying to load {src} as a compressed tree sequence failed"
-            ) from e
-    if region is not None:
-        raise ValueError(
-            "Region string is not supported for tree sequence files. "
-            "Use TreeSequence.keep_intervals() instead."
-        )
-    return TreeSequenceContig(ts, nodes=samples)
 
 
 def _from_iter(
@@ -172,7 +92,9 @@ def _from_iter(
     if genetic_map is not None:
         # function representing cumulative recombination rate
         if isinstance(genetic_map, float):
-            R = lambda x: x * genetic_map
+
+            def R(x):
+                return x * genetic_map
         else:
             R = PPoly(
                 x=np.copy(genetic_map.position),
@@ -247,7 +169,6 @@ def _from_ts(
     nodes_flat = [x for t in nodes for x in t]
 
     def rec_iter():
-        tri = []
         for v in ts.variants(samples=nodes_flat, left=left, right=right, copy=True):
             gts = v.genotypes.reshape(-1, 2)
             yield dict(pos=v.position, gts=gts)
@@ -257,9 +178,7 @@ def _from_ts(
     if progress:
         pos = ts.tables.sites.position
         ns = np.sum((pos >= left) & (pos < right))
-        viter = tqdm.tqdm(
-            viter, total=ts.num_sites, desc="Reading tree sequence", unit="sites"
-        )
+        viter = tqdm.tqdm(viter, total=ns, desc="Reading tree sequence", unit="sites")
 
     return _from_iter(
         viter,
@@ -299,7 +218,6 @@ def _from_vcf(
 
     def rec_iter():
         # Check if the samples are in the VCF header
-        tri = []
         for record in vcf.fetch(contig=contig, start=start, end=end):
             gts = np.zeros((len(sample_ids), 2), dtype=np.int8)
             for i, sample in enumerate(sample_ids):

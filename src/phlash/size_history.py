@@ -1,6 +1,5 @@
 from collections.abc import Callable
 from fractions import Fraction as mpq  # mimic gmpy2 api
-from itertools import pairwise
 from typing import NamedTuple
 
 import demes

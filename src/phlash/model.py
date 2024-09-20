@@ -5,7 +5,7 @@ from jax.scipy.special import xlogy
 from jaxtyping import Array, Float, Float64, Int8, Int64
 
 import phlash.hmm
-from phlash.params import MCMCParams, PSMCParams
+from phlash.params import MCMCParams
 
 
 def log_prior(mcp: MCMCParams) -> float:
@@ -24,11 +24,11 @@ def log_prior(mcp: MCMCParams) -> float:
 def log_density(
     mcp: MCMCParams,
     c: Float64[Array, "3"],
-    inds: Int64[Array, "batch"],
+    inds: Int64[Array, "batch"],  # noqa: F821
     warmup: Int8[Array, "c ell"],
     kern: "phlash.gpu.PSMCKernel",
-    afs: Int64[Array, "n"],
-    afs_transform: dict[int, Float[Array, "m n"]] = None,
+    afs: Int64[Array, "n"],  # noqa: F821
+    afs_transform: dict[int, Float[Array, "m n"]] = None,  # noqa: F722
 ) -> float:
     r"""
     Computes the log density of a statistical model by combining the contributions from
