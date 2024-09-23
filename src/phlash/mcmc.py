@@ -162,10 +162,12 @@ def fit(
     # "O(huge number) * O(tiny number)" ...
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
+        N0 = None
         if mutation_rate is not None:
             N0 = theta / 4 / mutation_rate
             options.setdefault("t1", 1e1 / 2 / N0)
             options.setdefault("tM", 1e6 / 2 / N0)
+            logger.debug("N0={}", N0)
         t1 = options.get("t1", 1e-4)
         tM = options.get("tM", 15.0)
         rho = options.get("rho_over_theta", 1.0) * theta
@@ -181,6 +183,7 @@ def fit(
             theta=theta,
             alpha=options.get("alpha", 0.0),
             beta=options.get("beta", 0.0),
+            N0=N0,
             window_size=window_size,
         )
     assert isinstance(init, MCMCParams)
@@ -221,8 +224,9 @@ def fit(
     # if there is a test set, define elpd() function for computing expected
     # log-predictive density. used to gauge convergence.
     if test_data:
-        test_afs = test_data.afs
         test_hets = test_data.hets[:max_samples]
+        test_afs = test_data.afs
+        test_ld = test_data.ld
         N_test = test_hets.shape[0]
         test_kern = get_kernel(
             M=M,
@@ -236,11 +240,12 @@ def fit(
             def _elpd_ll(mcp):
                 return log_density(
                     mcp,
-                    c=jnp.array([0.0, 1.0, 1.0]),
+                    c=jnp.array([0.0, 1.0, 1.0, 1.0]),
                     inds=jnp.arange(N_test),
                     kern=test_kern,
                     warmup=None,
                     afs=test_afs,
+                    ld=test_ld,
                     afs_transform=_afs_transform(test_afs),
                 )
 
@@ -250,8 +255,9 @@ def fit(
     # (dataset size) / (minibatch size) = N / S.
     kw = dict(
         kern=train_kern,
-        c=jnp.array([1.0, N / S, 1.0]),
+        c=jnp.array([1.0, N / S, 1.0, 1.0]),
         afs=afs,
+        ld=lds,
         afs_transform=afs_transform,
     )
 
@@ -311,11 +317,6 @@ def fit(
                 pbar.set_description(f"elpd={ema:.2f} a={a}")
             cb(dms())
     logger.info("MCMC finished successfully")
-    # notify the live plot that we are done. fails if we are not using liveplot.
-    try:
-        plotter.finish()
-    except Exception:
-        pass
 
     # convert to list of dms, easier for the end user who doesn't know jax
     return tree_unstack(dms())
