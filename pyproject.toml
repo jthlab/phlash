@@ -28,6 +28,7 @@ dependencies = [
     "scienceplots>=2.1.1",
     "quadax>=0.2.1",
     "numba>=0.60.0",
+    "diffrax>=0.6.0",
 ]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
