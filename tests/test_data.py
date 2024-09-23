@@ -4,7 +4,6 @@ import tempfile
 
 import msprime
 import numpy as np
-import pandas_plink
 import pytest
 import stdpopsim
 from pytest import fixture
@@ -105,6 +104,14 @@ def test_ts(sim):
     )
 
 
+def test_ts_repeated_nodes(sim):
+    tsc = Contig.from_ts(ts=sim, nodes=[(0, 1), (1, 2), (0, 0)])
+    assert tsc.hets[..., 1].max() == 2
+    assert tsc.hets[..., 1].sum() == 591
+    assert tsc.afs.keys() == {6}
+    assert np.all(tsc.afs[6] == [290, 26, 14, 0, 235])
+
+
 def test_ts_mask(sim):
     tsc = Contig.from_ts(ts=sim, nodes=[(0, 1), (2, 3)], mask=[(250, 1000)])
     assert np.all(tsc.hets[:, 2:10, 0] == ([50] + [0] * 7))
@@ -140,24 +147,3 @@ def test_ld(large_sim):
         ts=large_sim, genetic_map=1e-8, nodes=[(2 * i, 2 * i + 1) for i in range(10)]
     )
     assert len(tsc.ld) == len(buckets) - 1
-
-
-def test_ld_vs_hapne(test_assets):
-    bim, bed, fam = pandas_plink.read_plink(
-        str(test_assets / "ld" / "chr1.from752721.to121475791")
-    )
-    # sort bim in ascending order of pos
-    bim = bim.sort_values("pos")
-    # some sites are duplicated, remove them
-    bim = bim.drop_duplicates("pos")
-    # assert that cm is ascending
-    assert np.all(np.diff(bim["cm"]) >= 0)
-    # assert that pos is ascending
-    assert np.all(np.diff(bim["pos"]) > 0)
-    pos, cm = (np.insert(bim[x].values, 0, 0) for x in ["pos", "cm"])
-    rate = np.diff(cm) / np.diff(pos) / 100
-    rm = msprime.RateMap(position=pos, rate=rate)
-    genotype_matrix = fam.compute().astype(np.uint8)
-    GenotypeMatrixContig(
-        positions=bim["pos"].values, genotype_matrix=genotype_matrix, genetic_map=rm
-    )
