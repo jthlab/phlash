@@ -357,7 +357,12 @@ class PSMCKernel:
 
     @singledispatchmethod
     def loglik(self, pp: PSMCParams, index: int):
-        log_params = jax.tree.map(jnp.log, pp)
+        def safelog(x):
+            x_bad = x <= 0.0
+            x_safe = jnp.where(x_bad, 1.0, x)
+            return jnp.where(x_bad, -1000.0, jnp.log(x_safe))
+
+        log_params = jax.tree.map(safelog, pp)
         return _psmc_ll(log_params, index=index, kern=self)
 
     # convenience overload mostly to help test code
