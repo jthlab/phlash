@@ -5,7 +5,7 @@
 groups = ["default", "dev", "gpu"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:740dc7d9df3148629d2446ac2b73975fb749358998576f4043d664f7e4c7beb6"
+content_hash = "sha256:b51916e1fd7083b1472f89314b1eb4d9c6c3265e2d501f3580bb565dbe911bb2"
 
 [[metadata.targets]]
 requires_python = "~=3.10"
@@ -359,6 +359,42 @@ dependencies = [
 files = [
     {file = "Deprecated-1.2.14-py2.py3-none-any.whl", hash = "sha256:6fac8b097794a90302bdbb17b9b815e732d3c4720583ff1b198499d78470466c"},
     {file = "Deprecated-1.2.14.tar.gz", hash = "sha256:e5323eb936458dccc2582dc6f9c322c852a775a27065ff2b0c4970b9d53d01b3"},
+]
+
+[[package]]
+name = "diffrax"
+version = "0.6.0"
+requires_python = "~=3.9"
+summary = "GPU+autodiff-capable ODE/SDE/CDE solvers written in JAX."
+groups = ["default"]
+dependencies = [
+    "equinox>=0.11.2",
+    "jax>=0.4.28",
+    "jaxtyping>=0.2.24",
+    "lineax>=0.0.5",
+    "optimistix>=0.0.7",
+    "typeguard==2.13.3",
+    "typing-extensions>=4.5.0",
+]
+files = [
+    {file = "diffrax-0.6.0-py3-none-any.whl", hash = "sha256:7a59a796fd91e9c1cb20c37696c9f758681a3f24e72ff354a5a6aa335d3cde3a"},
+    {file = "diffrax-0.6.0.tar.gz", hash = "sha256:937207070bd7fdfe99178e23ec1787a630df7e3969b381e072ca6a14f5e2f3d3"},
+]
+
+[[package]]
+name = "equinox"
+version = "0.11.7"
+requires_python = "~=3.9"
+summary = "Elegant easy-to-use neural networks in JAX."
+groups = ["default"]
+dependencies = [
+    "jax!=0.4.27,>=0.4.13",
+    "jaxtyping>=0.2.20",
+    "typing-extensions>=4.5.0",
+]
+files = [
+    {file = "equinox-0.11.7-py3-none-any.whl", hash = "sha256:1177354e1795061fbad71535fe54096d8887dc059b4ab7d400fea2d47dfaa283"},
+    {file = "equinox-0.11.7.tar.gz", hash = "sha256:96e0216a9d822ec4b1465b0cbfbab14a36fb7e7d62c55f521287db3aaaa251be"},
 ]
 
 [[package]]
@@ -781,6 +817,23 @@ files = [
     {file = "kiwisolver-1.4.5-cp312-cp312-win32.whl", hash = "sha256:72d40b33e834371fd330fb1472ca19d9b8327acb79a5821d4008391db8e29f20"},
     {file = "kiwisolver-1.4.5-cp312-cp312-win_amd64.whl", hash = "sha256:2c5674c4e74d939b9d91dda0fae10597ac7521768fec9e399c70a1f27e2ea2d9"},
     {file = "kiwisolver-1.4.5.tar.gz", hash = "sha256:e57e563a57fb22a142da34f38acc2fc1a5c864bc29ca1517a88abc963e60d6ec"},
+]
+
+[[package]]
+name = "lineax"
+version = "0.0.5"
+requires_python = "~=3.9"
+summary = "Linear solvers in JAX and Equinox."
+groups = ["default"]
+dependencies = [
+    "equinox>=0.11.3",
+    "jax>=0.4.26",
+    "jaxtyping>=0.2.20",
+    "typing-extensions>=4.5.0",
+]
+files = [
+    {file = "lineax-0.0.5-py3-none-any.whl", hash = "sha256:601bcd121b32707642a6bae65188d5925ff6f2c3c46a99954592a6e8be82ac63"},
+    {file = "lineax-0.0.5.tar.gz", hash = "sha256:ed41098dbd94b639287f15682e19cd9ec1dc9ecad6844ee861536044a0e3285c"},
 ]
 
 [[package]]
@@ -1234,6 +1287,24 @@ dependencies = [
 files = [
     {file = "optax-0.2.3-py3-none-any.whl", hash = "sha256:083e603dcd731d7e74d99f71c12f77937dd53f79001b4c09c290e4f47dd2e94f"},
     {file = "optax-0.2.3.tar.gz", hash = "sha256:ec7ab925440b0c5a512e1f24fba0fb3e7d760a7fd5d2496d7a691e9d37da01d9"},
+]
+
+[[package]]
+name = "optimistix"
+version = "0.0.7"
+requires_python = "~=3.9"
+summary = "Nonlinear optimisation in JAX and Equinox."
+groups = ["default"]
+dependencies = [
+    "equinox>=0.11.1",
+    "jax>=0.4.18",
+    "jaxtyping>=0.2.23",
+    "lineax>=0.0.4",
+    "typing-extensions>=4.5.0",
+]
+files = [
+    {file = "optimistix-0.0.7-py3-none-any.whl", hash = "sha256:7d1b1b3ab5462142d38f7e1171b597e3df591c7c33de43f85435dc7c0b9aa317"},
+    {file = "optimistix-0.0.7.tar.gz", hash = "sha256:0c649293b01c2029a5f9878fbb912d4977105830b4368b0d44b710b621c49ac3"},
 ]
 
 [[package]]
