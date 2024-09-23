@@ -166,11 +166,12 @@ def _from_ts(
     if right is None:
         right = int(ts.get_sequence_length())
 
-    nodes_flat = [x for t in nodes for x in t]
+    nodes_flat = list({x for t in nodes for x in t})
+    nodes_map = np.array([list(map(nodes_flat.index, tup)) for tup in nodes])
 
     def rec_iter():
         for v in ts.variants(samples=nodes_flat, left=left, right=right, copy=True):
-            gts = v.genotypes.reshape(-1, 2)
+            gts = v.genotypes[nodes_map]
             yield dict(pos=v.position, gts=gts)
 
     viter = rec_iter()
