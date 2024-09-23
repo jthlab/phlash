@@ -61,6 +61,8 @@ class JaxPPoly(NamedTuple):
         #    = \sum_{i=0}^{T - 1} \int_{t_i}^{t_{i+1}} exp(-I_i) exp[-a_i (t-t_i)] / a
         #    = \sum_{i=0}^{T - 1} exp(-I_i) (1 - exp(-a_i * dt_i) / a_i
         #
+        tinf = jnp.isinf(t)
+        t_safe = jnp.where(tinf, 1.0, t)
         assert self.c.ndim == 2
         assert self.c.shape[0] == 1  # piecewise constant
         a = self.c[0]
@@ -76,12 +78,11 @@ class JaxPPoly(NamedTuple):
                 jnp.exp(-I[-1:] + const) / a[-1:],
             ]
         )
-        i = jnp.maximum(jnp.searchsorted(self.x, t, side="right") - 1, 0)
+        i = jnp.maximum(jnp.searchsorted(self.x, t_safe, side="right") - 1, 0)
         # c = jnp.exp(-I[i] + const) * -jnp.expm1(-a[i] * (t - self.x[i])) / a[i]
         c = (
-            jnp.exp(-I[i] + const) - jnp.exp(-(I[i] + a[i] * (t - self.x[i])) + const)
+            jnp.exp(-I[i] + const)
+            - jnp.exp(-(I[i] + a[i] * (t_safe - self.x[i])) + const)
         ) / a[i]
         mask = jnp.arange(len(self.x) - 1) < i
-        return jnp.where(
-            jnp.isinf(t), exp_integrals.sum(), (exp_integrals * mask).sum() + c
-        )
+        return jnp.where(tinf, exp_integrals.sum(), (exp_integrals * mask).sum() + c)
