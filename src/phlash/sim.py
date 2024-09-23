@@ -178,9 +178,10 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
         return ts.as_vcf(
             individual_names=samples, position_transform=pt, contig_id=chrom.id
         )
-    nodes = list(ts.nodes())
     return Contig.from_ts(
-        ts=ts, nodes=[(2 * i, 2 * i + 1) for i, _ in enumerate(ts.individuals())]
+        ts=ts,
+        nodes=[(2 * i, 2 * i + 1) for i, _ in enumerate(ts.individuals())],
+        # genetic_map=chrom.recombination_map
     )
 
 
@@ -243,8 +244,9 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
         f.write(vcf)
     n = sum(samples) // 2
     samples = [f"sample{i}" for i in range(n)]
-    return VcfContig(
-        vcf_path, samples, contig=None, interval=None, _allow_empty_region=True
+    # FIXME this will fail with empty Contig and interval
+    return Contig.from_vcf(
+        vcf_path=vcf_path, sapmles=samples, contig=None, interval=None
     ).to_raw(100)
 
 

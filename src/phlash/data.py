@@ -364,9 +364,6 @@ def init_mcmc_data(
         for k, v in (ds.ld or {}).items():
             lds.setdefault(k, []).append(v)
     for k in lds:
-        d = jax.tree.map(lambda *a: np.array(a), *lds[k])
-        mu = np.average(d["mu"], weights=d["n"])
-        # pooled variance
-        sigma2 = np.average(d["sigma2"], weights=d["n"] - 1)
-        lds[k] = {"mu": mu, "sigma2": sigma2}
+        d = jax.tree.map(lambda *a: np.mean(a), *lds[k])
+        lds[k] = d
     return np.sum(afss, 0), np.concatenate(chunks, 0), lds
