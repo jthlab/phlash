@@ -58,6 +58,7 @@ class MCMCParams:
     alpha: jdc.Static[float]
     beta: jdc.Static[float]
     window_size: jdc.Static[int]
+    N0: jdc.Static[float] = None
 
     @classmethod
     def from_linear(
@@ -71,6 +72,7 @@ class MCMCParams:
         alpha: float = 0.0,
         beta: float = 0.0,
         window_size: int = 100,
+        N0: float = None,
     ) -> "MCMCParams":
         dtM = tM - t1
         t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])
@@ -84,6 +86,7 @@ class MCMCParams:
             alpha=alpha,
             beta=beta,
             window_size=window_size,
+            N0=N0,
         )
 
     def to_dm(self) -> phlash.size_history.DemographicModel:
