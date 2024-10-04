@@ -3,7 +3,6 @@ import json
 import jax.numpy as jnp
 import numpy as np
 import plotly.graph_objs as go
-import plotly.io._renderers
 from IPython import get_ipython
 from IPython.display import Javascript, display
 from jax import jit, vmap
@@ -29,20 +28,6 @@ window.updatePhlashPlot = function(x, m, q025, q975, hasTruth) {
     }, [1 + hasTruth]); // second or third
 };
 """
-try:
-    # this api is not documented and could change in a future release.
-    plotly.io._renderers.renderers[
-        "PhlashRenderer"
-    ] = plotly.io._renderers.NotebookRenderer(
-        config={}, connected=True, post_script=_js_update
-    )
-except Exception:
-    logger.debug(
-        "Couldn't add a custom renderer using the (undocumented) "
-        "plotly.io._renderers interface. Live-plotting will be disabled. "
-        "Please notify the package maintainer."
-    )
-    raise ImportError
 
 
 def _is_running_in_jupyter():
@@ -79,7 +64,9 @@ class _IPythonLivePlot:
         self._truth = truth
         self._fig = go.Figure()
         self._fig.update_layout(
-            template="simple_white", xaxis_title="Time", yaxis_title="$N_e$"
+            template="simple_white",
+            xaxis_title="Time",
+            yaxis_title="Effective population size",
         )
         self._fig.update_xaxes(type="log")
         self._fig.update_yaxes(type="log")
@@ -131,7 +118,7 @@ class _IPythonLivePlot:
             return jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
 
         self._qtiles = jit(qtiles)
-        self._fig.show("PhlashRenderer")
+        self._fig.show(post_script=_js_update)
         self._handle = display(display_id=True)
 
     def __call__(self, dms: DemographicModel):
