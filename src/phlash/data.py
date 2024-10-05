@@ -4,7 +4,6 @@ import subprocess
 from collections.abc import Iterable
 from typing import NamedTuple
 
-import jax
 import msprime
 import numpy as np
 import pysam
@@ -56,6 +55,7 @@ def _from_iter(
     window_size: int = 100,
     genetic_map: msprime.RateMap = None,
     ld_buckets: np.ndarray = None,
+    ld_region_size: int = 10_000_000,
     mask: list[tuple[int, int]] = None,
 ) -> Contig:
     """Construct a contig from an iterator of records.
@@ -71,8 +71,9 @@ def _from_iter(
     """
     w = window_size
     tr = IntervalTree.from_tuples(mask or [])
-    L = int((end - start) // w)
-    hets = np.empty((N, L + 1, 2), dtype=np.int16)
+    L = end - start
+    Lw = int(L // w)
+    hets = np.empty((N, Lw + 1, 2), dtype=np.int16)
     n = hets[..., 0]
     d = hets[..., 1]
     n[:] = window_size  # num obs
@@ -100,6 +101,7 @@ def _from_iter(
                 x=np.copy(genetic_map.position),
                 c=np.nan_to_num(genetic_map.rate)[None],
             ).antiderivative()
+        physical_pos = []
         genetic_pos = []
         genotypes = []
 
@@ -134,6 +136,7 @@ def _from_iter(
 
         # ld calculations
         if genetic_map is not None:
+            physical_pos.append(rec["pos"])
             genetic_pos.append(R(rec["pos"]))
             genotypes.append(gts)
 
@@ -141,8 +144,14 @@ def _from_iter(
 
     if genetic_map is not None:
         if ld_buckets is None:
-            ld_buckets = np.geomspace(1e-5, 2e-3, 12)
-        ld = calc_ld(np.array(genetic_pos), np.array(genotypes), ld_buckets)
+            ld_buckets = np.geomspace(1e-5, 1e-2, 10)
+        ld = calc_ld(
+            np.array(physical_pos),
+            np.array(genetic_pos),
+            np.array(genotypes),
+            ld_buckets,
+            ld_region_size,
+        )
         ret = ret._replace(ld=ld)
 
     return ret
@@ -358,12 +367,4 @@ def init_mcmc_data(
     assert len({ch.shape[-1] for ch in chunks}) == 1
     assert all(ch.ndim == 3 for ch in chunks)
     assert all(ch.shape[2] == 2 for ch in chunks)
-    # merge lds
-    lds = {}
-    for ds in data:
-        for k, v in (ds.ld or {}).items():
-            lds.setdefault(k, []).append(v)
-    for k in lds:
-        d = jax.tree.map(lambda *a: np.mean(a), *lds[k])
-        lds[k] = d
-    return np.sum(afss, 0), np.concatenate(chunks, 0), lds
+    return np.sum(afss, 0), np.concatenate(chunks, 0)

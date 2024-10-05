@@ -3,6 +3,7 @@
 import jax.numpy as jnp
 from diffrax import Kvaerno3, ODETerm, PIDController, diffeqsolve
 
+from phlash.ld.data import LdStats
 from phlash.size_history import SizeHistory
 
 
@@ -43,7 +44,7 @@ def f(t, y, args):
     return ret
 
 
-def expected_ld(eta: SizeHistory, r: float, theta: float):
+def expected_ld(eta: SizeHistory, r: float, theta: float) -> LdStats:
     "expected LD statistics at recombination distance r"
     ld0 = stationary_ld(eta.c[-1], r, theta)
     y0 = {"ld": ld0, "h": theta}
@@ -71,4 +72,5 @@ def expected_ld(eta: SizeHistory, r: float, theta: float):
         args=args,
     )
     eld = sol.ys["ld"][0]
-    return dict(zip(["D2", "Dz", "pi2"], eld))
+    d = dict(zip(["D2", "Dz", "pi2"], eld))
+    return LdStats(**d)

@@ -29,7 +29,7 @@ def log_density(
     warmup: Int8[Array, "c ell"],
     kern: "phlash.gpu.PSMCKernel",
     afs: Int64[Array, "n"] = None,  # noqa: F821
-    ld: dict[tuple[float, float], Array] = None,
+    ld: dict[tuple[float, float], dict] = None,
     afs_transform: dict[int, Float[Array, "m n"]] = None,  # noqa: F722
 ) -> float:
     r"""
@@ -76,22 +76,29 @@ def log_density(
     # ld contribution, if present
     l4 = 0.0
     if ld:
+        eta = dm.eta
+        e0 = jnp.eye(len(eta.c))[0]
+        cg = e0 * eta.c + (1 - e0) * jax.lax.stop_gradient(eta.c)
+        eta_ld = eta._replace(c=cg)
 
         @vmap
-        def f(a, b, d):
-            r = jnp.geomspace(a, b, 5)
-            y = vmap(expected_ld, (None, 0, None))(dm.eta, r * 2 * mcp.N0, dm.theta)
-            eld = jax.tree.map(lambda v: jnp.trapezoid(v, r, axis=0), y)
-            observed, expected = (
-                jnp.array([e["D2"], e["Dz"]]) / e["pi2"] for e in (d, eld)
-            )
-            # jax.debug.print("obs:{} exp:{}", observed, expected)
-            return jnp.sum((observed - expected) ** 2)
+        def f(ab, d):
+            def f(r):
+                # dmr = dm.rescale(dm.theta / 4 / mcp.N0)
+                return expected_ld(eta_ld, r * 2 * mcp.N0, dm.theta).norm()
 
-        a, b = jnp.array(list(ld.keys())).T
+            y = vmap(f)(ab)
+            expected = vmap(jnp.mean)(y)
+            # expected = f((b - a) / 2)
+            # jax.debug.print("obs:{} exp:{}", d["mu"], expected)
+            x = d["mu"] - expected
+            return -x @ jnp.linalg.solve(d["Sigma"], x)
+
+        ab = jnp.array(list(ld.keys()))
         d = jax.tree.map(lambda *a: jnp.array(a), *ld.values())
-        # jax.debug.print("a:{} b:{} d:{}", a, b, d)
-        l4 -= f(a, b, d).sum()
+        l4s = f(ab, d)
+        # jax.debug.print("l4s:{}", l4s)
+        l4 += l4s.sum()
 
     ll = jnp.array([l1, l2, l3, l4])
     ret = jnp.dot(c, ll)

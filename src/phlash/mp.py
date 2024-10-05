@@ -49,7 +49,6 @@ class DummyExecutor(Executor):
 
 
 if os.environ.get("PHLASH_DISABLE_MP"):
-    JaxCpuProcessPoolExecutor = DummyExecutor
-
-
-pool = JaxCpuProcessPoolExecutor()
+    Pool = DummyExecutor
+else:
+    Pool = JaxCpuProcessPoolExecutor
