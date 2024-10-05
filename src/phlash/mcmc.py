@@ -1,5 +1,6 @@
 import blackjax
 import jax
+import jax_dataclasses as jdc
 import numpy as np
 import optax
 import tqdm.auto as tqdm
@@ -12,6 +13,7 @@ from loguru import logger
 from phlash.afs import bws_transform, fold_transform
 from phlash.data import Contig, init_mcmc_data
 from phlash.kernel import get_kernel
+from phlash.ld.data import LdStats
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
@@ -31,7 +33,7 @@ def _check_jax_gpu():
 _particles = None  # for debugging
 
 
-def _afs_transform(afs: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
+def _default_afs_transform(afs: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
     ret = {}
     for n, afs_n in afs.items():
         T1 = fold_transform(afs_n.shape[0] + 1)
@@ -94,11 +96,20 @@ def fit(
     # the number of parallel workers. by default, use all cores, but this can take up
     # too much memory. set num_workers=1 to process the data sequentially.
     num_workers = options.get("num_workers")
-    logger.info("Loading data")
-    afs, chunks, lds = init_mcmc_data(
+    logger.info("Loading data...")
+    afs, chunks = init_mcmc_data(
         data, window_size, overlap, chunk_size, max_samples, num_workers
     )
-    logger.debug("chunks.shape={}", chunks.shape)
+    logger.trace("chunks.shape={}", chunks.shape)
+    # create ld
+    lds = {}
+    for d in data:
+        if d.ld is not None:
+            for k, v in d.ld.items():
+                lds.setdefault(k, []).extend(v)
+    if lds:
+        # convert list-of-pytrees to pytree of arrays
+        lds = {k: LdStats.summarize(v) for k, v in lds.items() if v}  # v could be empty
     # to conserve memory, we get rid of data at this point
     del data
     # the mutation rate per generation, if known.
@@ -119,7 +130,7 @@ def fit(
     else:
         # by default, fold the afs and apply a 90% binning strategy as in
         # Bhaskar-Wang-Song
-        afs_transform = _afs_transform(afs)
+        afs_transform = _default_afs_transform(afs)
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -190,22 +201,37 @@ def fit(
     opt = optax.amsgrad(learning_rate=options.get("learning_rate", 0.1))
     df = grad(log_density)
     svgd = blackjax.svgd(df, opt)
+    M = init.M
 
     # set up the particles and add noise
-    M = init.M
-    x0, unravel = ravel_pytree(init)
-    ndim = len(x0)
-    prior_mu = x0
-    key, rng_key_init = jax.random.split(key, 2)
-    prior_prec = options.get("sigma", 1.0) * jnp.eye(ndim)
-    initial_particles = vmap(unravel)(
-        jax.random.multivariate_normal(
-            rng_key_init,
-            prior_mu,
-            prior_prec,
-            shape=(options.get("num_particles", 500),),
+    if False:
+
+        def f(key):
+            keys = jax.random.split(key, 3)
+            return jdc.replace(
+                init,
+                log_rho_over_theta=init.log_rho_over_theta + jax.random.normal(keys[0]),
+                t_tr=init.t_tr
+                + 1.0 * jax.random.normal(keys[1], shape=init.t_tr.shape),
+                c_tr=init.c_tr
+                + 0.1 * jax.random.normal(keys[2], shape=init.c_tr.shape),
+            )
+
+        P = options.get("num_particles", 500)
+        initial_particles = vmap(f)(jax.random.split(key, P))
+    else:
+        x0, unravel = ravel_pytree(init)
+        prior_mu = x0
+        key, rng_key_init = jax.random.split(key, 2)
+        prior_prec = options.get("sigma", 0.5)
+        initial_particles = vmap(unravel)(
+            prior_mu
+            + prior_prec
+            * jax.random.normal(
+                rng_key_init,
+                shape=(options.get("num_particles", 500), len(prior_mu)),
+            )
         )
-    )
     logger.trace("Initial particles: {}", initial_particles)
     state = svgd.init(initial_particles)
     # this function takes gradients steps.
@@ -227,6 +253,8 @@ def fit(
         test_hets = test_data.hets[:max_samples]
         test_afs = test_data.afs
         test_ld = test_data.ld
+        if test_ld is not None:
+            test_ld = {k: LdStats.summarize(v) for k, v in test_ld.items() if v}
         N_test = test_hets.shape[0]
         test_kern = get_kernel(
             M=M,
@@ -246,16 +274,17 @@ def fit(
                     warmup=None,
                     afs=test_afs,
                     ld=test_ld,
-                    afs_transform=_afs_transform(test_afs),
+                    afs_transform=_default_afs_transform(test_afs),
                 )
 
             return _elpd_ll(mcps).mean()
 
     # to have unbiased gradient estimates, need to pre-multiply the chunk term by ratio
     # (dataset size) / (minibatch size) = N / S.
+    c = options.get("c", np.array([1.0, N / S, 1.0, 1.0]))
     kw = dict(
         kern=train_kern,
-        c=jnp.array([1.0, N / S, 1.0, 1.0]),
+        c=c,
         afs=afs,
         ld=lds,
         afs_transform=afs_transform,
