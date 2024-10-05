@@ -1,5 +1,4 @@
 from collections.abc import Callable
-from fractions import Fraction as mpq  # mimic gmpy2 api
 from typing import NamedTuple
 
 import demes
@@ -11,6 +10,7 @@ from jax import jit, vmap
 from scipy.optimize import root_scalar
 
 from phlash.jax_ppoly import JaxPPoly
+from phlash.memory import memory
 from phlash.util import Pattern
 
 
@@ -30,6 +30,13 @@ class SizeHistory(NamedTuple):
     def M(self):
         assert len(self.t) == len(self.c)
         return len(self.t)
+
+    @classmethod
+    def random(cls, rng):
+        log_dt, log_c = rng.normal(size=(2, 10))
+        t = np.exp(log_dt).cumsum()
+        t[0] = 0.0
+        return cls(t=t, c=np.exp(log_c))
 
     def to_demes(self, deme_name: str = "pop") -> demes.Graph:
         b = demes.Builder()
@@ -347,7 +354,10 @@ class DemographicModel(NamedTuple):
         return self.eta.M
 
 
+@memory.cache
 def _W_matrix(n: int) -> np.ndarray:
+    from fractions import Fraction as mpq  # mimic gmpy2 api
+
     # IMPORTANT (DO NOT DELETE): this cast makes sure that n is a Python bignum, and not
     # a sneaky np.int64 in disguise. this matters because we need exact integer
     # arithmetic over an unbounded range in the code below.
