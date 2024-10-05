@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import warnings
 from concurrent.futures import as_completed
+from functools import partial
 from typing import TypedDict
 
 import demes
@@ -87,15 +88,24 @@ def stdpopsim_dataset(
     ds = {}
     return_vcf = options.get("return_vcf")
     N0 = _get_N0(model, populations)
-    futs = {
-        phlash.mp.pool.submit(
-            _simulate, model, N0, chrom, pop_dict, seed, use_scrm, return_vcf
-        ): chrom_id
-        for chrom_id, chrom in chroms.items()
-    }
-    for f in as_completed(futs):
-        chrom_id = futs[f]
-        ds[chrom_id] = f.result()
+    with phlash.mp.Pool() as pool:
+        futs = {
+            pool.submit(
+                _simulate,
+                model,
+                N0,
+                chrom,
+                pop_dict,
+                seed,
+                use_scrm,
+                return_vcf,
+                options.get("ld", True),
+            ): chrom_id
+            for chrom_id, chrom in chroms.items()
+        }
+        for f in as_completed(futs):
+            chrom_id = futs[f]
+            ds[chrom_id] = f.result()
     true_eta = compute_truth(model, list(populations))
     true_dm = DemographicModel(eta=true_eta, theta=mu, rho=None)
     return {"data": ds, "truth": true_dm}
@@ -152,7 +162,8 @@ def _simulate(
     pop_dict: dict,
     seed: int,
     use_scrm: bool,
-    return_vcf: bool,
+    return_vcf: bool | io.TextIOBase,
+    ld: bool,
 ) -> Contig:
     pd = _params_for_sim(model, N0, chrom, pop_dict)
     if use_scrm or (use_scrm is None and pd["rho"] > 1e5 and return_vcf is not False):
@@ -160,32 +171,38 @@ def _simulate(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
         try:
-            return _simulate_scrm(model, chrom, pop_dict, pd["N0"], seed, return_vcf)
+            return _simulate_scrm(
+                model, chrom, pop_dict, pd["N0"], seed, return_vcf, ld
+            )
         except Exception as e:
             logger.debug("Running scrm failed: {}", e)
-    return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
+    return _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld)
 
 
-def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
+def _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld) -> Contig | str:
     engine = stdpopsim.get_engine("msprime")
     ts = engine.simulate(model, chrom, pop_dict, seed=seed)
     if return_vcf:
+        if isinstance(return_vcf, str):
+            f = partial(ts.write_vcf, open(return_vcf, "w"))
+        else:
+            f = ts.as_vcf
 
         def pt(x):
             return (1 + np.array(x)).astype(int)
 
         samples = [f"sample{i}" for i in range(ts.num_individuals)]
-        return ts.as_vcf(
-            individual_names=samples, position_transform=pt, contig_id=chrom.id
-        )
-    return Contig.from_ts(
+        return f(individual_names=samples, position_transform=pt, contig_id=chrom.id)
+    kw = dict(
         ts=ts,
         nodes=[(2 * i, 2 * i + 1) for i, _ in enumerate(ts.individuals())],
-        # genetic_map=chrom.recombination_map
     )
+    if ld:
+        kw["genetic_map"] = chrom.recombination_map
+    return Contig.from_ts(**kw)
 
 
-def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
+def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, recomb, out_file=None):
     assert chrom.interval_list[0].shape == (1, 2)
     assert chrom.interval_list[0][0, 0] == 0.0
     L = chrom.interval_list[0][0, 1]
@@ -237,7 +254,11 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
         universal_newlines=True,
     ) as proc:
         vcf = _parse_scrm(proc.stdout, chrom.id)
-    if return_vcf:
+    if isinstance(return_vcf, str):
+        with open(return_vcf, "w") as f:
+            f.write(vcf)
+        return
+    elif return_vcf is True:
         return vcf
     fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
     with os.fdopen(fd, "wt") as f:
