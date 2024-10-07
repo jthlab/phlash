@@ -19,9 +19,9 @@ jax.config.update("jax_enable_x64", True)
 
 from phlash.data import Contig
 from phlash.mcmc import fit
-from phlash.plot import plot_posterior
 from phlash.psmc import psmc
 from phlash.size_history import DemographicModel, SizeHistory
+from phlash.util import plot_posterior
 
 __all__ = ["fit", "Contig", "psmc", "DemographicModel", "SizeHistory", "plot_posterior"]
 
