@@ -101,6 +101,16 @@ def fit(
         data, window_size, overlap, chunk_size, max_samples, num_workers
     )
     logger.trace("chunks.shape={}", chunks.shape)
+    # some chunks have huge mutation rate, due to SV or whatever, set to missing
+    c = options.get("het_cutoff", 0.05)
+    m = chunks[..., 1] / np.maximum(1, chunks[..., 0]) > c
+    if m.mean() > 0:
+        chunks[m] = [0, 0]
+        logger.warning(
+            f"{m.mean() * 100:.2f}% of windows had heterozygosity of >{c * 100:.2f}%. "
+            " These windows have been marked as missing data. This cutoff can be"
+            " controlled with the het_cutoff= option."
+        )
     # create ld
     lds = {}
     for d in data:
