@@ -42,6 +42,13 @@ def calc_ld(
     physical_pos, genetic_pos, genotypes, r_buckets, region_size
 ) -> dict[tuple[float, float], list[LdStats]]:
     genotypes = np.asarray(genotypes)
+    L, N, _ = genotypes.shape
+    assert genotypes.shape == (L, N, 2)
+    if N < 4:
+        raise ValueError(
+            "At least N=4 diploid samples are needed to compute LD "
+            "statistics (and preferably lots more)"
+        )
     genetic_pos = np.asarray(genetic_pos)
     # filter to only biallelic genotypes since that is what is modeled by the LD moments
     # functions
@@ -60,12 +67,13 @@ def calc_ld(
     futs = {}
     ret = {}
     regions = np.searchsorted(
-        physical_pos, np.arange(0, physical_pos.max(), region_size)
+        physical_pos, np.arange(physical_pos.min(), physical_pos.max(), region_size)
     )
     with ThreadPoolExecutor() as pool:
         for a, b in it.pairwise(r_buckets):
             ret[(a, b)] = []
             for i, j in it.pairwise(regions):
+                assert i < j
                 f = pool.submit(_helper, genotypes[i:j], genetic_pos[i:j], a, b)
                 futs[f] = (a, b)
         for f in tqdm.tqdm(

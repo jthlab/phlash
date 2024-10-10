@@ -55,7 +55,7 @@ def _from_iter(
     window_size: int = 100,
     genetic_map: msprime.RateMap = None,
     ld_buckets: np.ndarray = None,
-    ld_region_size: int = 10_000_000,
+    ld_region_size: int = 1_000_000,
     mask: list[tuple[int, int]] = None,
 ) -> Contig:
     """Construct a contig from an iterator of records.
@@ -144,7 +144,7 @@ def _from_iter(
 
     if genetic_map is not None:
         if ld_buckets is None:
-            ld_buckets = np.geomspace(1e-5, 1e-2, 10)
+            ld_buckets = np.geomspace(1e-6, 1e-2, 12)
         ld = calc_ld(
             np.array(physical_pos),
             np.array(genetic_pos),
