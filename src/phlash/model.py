@@ -76,23 +76,22 @@ def log_density(
     # ld contribution, if present
     l4 = 0.0
     if ld:
-        eta = dm.eta
-        e0 = jnp.eye(len(eta.c))[0]
-        cg = e0 * eta.c + (1 - e0) * jax.lax.stop_gradient(eta.c)
-        eta_ld = eta._replace(c=cg)
 
         @vmap
         def f(ab, d):
+            @vmap
             def f(r):
                 # dmr = dm.rescale(dm.theta / 4 / mcp.N0)
-                return expected_ld(eta_ld, r * 2 * mcp.N0, dm.theta).norm()
+                return expected_ld(dm.eta, r * 4 * mcp.N0, dm.theta).norm()
 
-            y = vmap(f)(ab)
-            expected = vmap(jnp.mean)(y)
-            # expected = f((b - a) / 2)
+            # a, b = ab
+            # x = jnp.geomspace(a, b, 8)
+            # y = f(x)
+            expected = f(ab).mean(0)
+            # expected = vmap(jnp.trapezoid, (1, None))(y, x) / (b - a)
             # jax.debug.print("obs:{} exp:{}", d["mu"], expected)
-            x = d["mu"] - expected
-            return -x @ jnp.linalg.solve(d["Sigma"], x)
+            u = d["mu"] - expected
+            return -u @ jnp.linalg.solve(d["Sigma"], u)
 
         ab = jnp.array(list(ld.keys()))
         d = jax.tree.map(lambda *a: jnp.array(a), *ld.values())
