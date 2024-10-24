@@ -202,7 +202,7 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld) -> Contig | str:
     return Contig.from_ts(**kw)
 
 
-def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, recomb, out_file=None):
+def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
     assert chrom.interval_list[0].shape == (1, 2)
     assert chrom.interval_list[0][0, 0] == 0.0
     L = chrom.interval_list[0][0, 1]
