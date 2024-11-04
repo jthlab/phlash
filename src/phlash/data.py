@@ -1,9 +1,11 @@
 "Classes for importing data"
 
+import operator
 import subprocess
 from collections.abc import Iterable
 from typing import NamedTuple
 
+import jax.tree
 import msprime
 import numpy as np
 import pysam
@@ -32,10 +34,11 @@ class Contig(NamedTuple):
     >>> Contig.from_ts(ts=ts, nodes=[(0, 1), (2, 3)])
     """
 
-    hets: Int8[Array, "N L 2"]  # noqa: F722
+    hets: tuple[Int8[Array, "N L 2"], Int8[Array, "N 2"]]  # noqa: F722
     afs: Int[Array, "n"]  # noqa: F821
     ld: dict[tuple[float, float], float]
     window_size: int
+    populations: tuple[str]
 
     @property
     def L(self):
@@ -43,7 +46,7 @@ class Contig(NamedTuple):
 
     def chunk(self, overlap, chunk_size, window_size):
         return _chunk_het_matrix(
-            het_matrix=self.hets, overlap=overlap, chunk_size=chunk_size
+            het_matrix=self.hets[1], overlap=overlap, chunk_size=chunk_size
         )
 
 
@@ -80,8 +83,6 @@ def _from_iter(
     n[:, -1] = L % w
     d[:] = 0  # num derived
 
-    afs = {}
-
     # mask out regions of missing values
     if mask is not None:
         for a, b in mask:
@@ -112,27 +113,25 @@ def _from_iter(
             return False
         return gts[~miss].var() > 0  # any variation at all in sample
 
+    afs = {}
+
     for rec in filter(is_seg, rec_iter):
         i = int((rec["pos"] - start) / w)
         if tr.overlaps(i):
             # position is masked, skip
             continue
+
         gts = rec["gts"]  # [N, 2]
         miss = (gts == -1).any(1)
         n[:, i] -= miss  # missing data
         d[~miss, i] += (gts[:, 0] != gts[:, 1])[~miss]  # number of derived alleles
 
-        # afs calculations: total number of observations and total number of derived
-        if (
-            gts.max() == 1 and (gts == 0).any()
-        ):  # skip tri/tetra allelic sites, and non-seg too
-            di = np.sum(gts == 1)
-            ni = np.sum(gts >= 0)
-            assert di > 0
-            afs.setdefault(ni, np.zeros(ni - 1, dtype=int))
-            afs[ni][di.sum() - 1] += (
-                1  # number of derived alleles, shifted to start at 1
-            )
+        if rec.get("afs"):
+            k, a = rec["afs"]
+            sh = np.array(k) + 1
+            v = tuple(a.values())
+            afs.setdefault(k, np.zeros(sh, dtype=int))
+            afs[k][v] += 1
 
         # ld calculations
         if genetic_map is not None:
@@ -140,7 +139,7 @@ def _from_iter(
             genetic_pos.append(R(rec["pos"]))
             genotypes.append(gts)
 
-    ret = Contig(hets=hets, afs=afs, ld=None, window_size=w)
+    ret = Contig(hets=hets, afs=afs, ld=None, window_size=w, populations=None)
 
     if genetic_map is not None:
         if ld_buckets is None:
@@ -175,7 +174,7 @@ def _from_ts(
     if right is None:
         right = int(ts.get_sequence_length())
 
-    nodes_flat = list({x for t in nodes for x in t})
+    nodes_flat = list({x for tup in nodes for x in tup})
     nodes_map = np.array([list(map(nodes_flat.index, tup)) for tup in nodes])
 
     def rec_iter():
@@ -190,15 +189,54 @@ def _from_ts(
         ns = np.sum((pos >= left) & (pos < right))
         viter = tqdm.tqdm(viter, total=ns, desc="Reading tree sequence", unit="sites")
 
-    return _from_iter(
+    ret = _from_iter(
         viter,
         start=left,
         end=right,
         N=len(nodes),
         window_size=window_size,
         genetic_map=genetic_map,
+        ld_buckets=ld_buckets,
         mask=mask,
     )
+
+    def pop_lookup(n):
+        p = ts.node(n).population
+        try:
+            return ts.population(p).metadata["name"]
+        except Exception:
+            return p
+
+    node_pops = jax.tree.map(pop_lookup, nodes)
+    all_pops = tuple(
+        sorted(jax.tree.reduce(operator.or_, jax.tree.map(lambda x: {x}, node_pops)))
+    )
+    if -1 in all_pops and all_pops != (-1,):
+        raise ValueError(
+            "Some sample nodes have missing populations while others have "
+            "non-missing populations."
+        )
+
+    # convert to numerical indices
+    node_pops = jax.tree.map(all_pops.index, node_pops)
+
+    sample_sets = {}
+    for p in all_pops:
+        sample_sets[p] = [n for n in nodes_flat if pop_lookup(n) == p]
+    sample_sets = list(map(list, sample_sets.values()))
+    afs = ts.allele_frequency_spectrum(
+        sample_sets, span_normalise=False, polarised=True
+    )
+    # tskit has no missing sites, so the number of "non-missing" observations is just
+    # the shape minus one
+    afsf = afs.reshape(-1)
+    afsf[0] = afsf[-1] = 0  # mask out non-seg entries
+    k = tuple([n - 1 for n in afs.shape])
+    H = (ret.hets, np.array(node_pops, dtype=np.int8))
+    (N, L, _) = H[0].shape
+    assert H[0].shape == (N, L, 2)
+    assert H[1].shape == (N, 2)
+    return ret._replace(hets=H, afs={k: afs}, populations=all_pops)
 
 
 Contig.from_ts = _from_ts
@@ -209,31 +247,63 @@ def _from_vcf(
     vcf_path: str,
     contig: str,
     interval: tuple[int, int],
-    sample_ids: list[str],
+    sample_ids: list[str | tuple[str, str]],
+    sample_pops: dict[str, str] = None,
     window_size: int = 100,
     genetic_map: msprime.RateMap | float = None,
     ld_buckets: np.ndarray = None,
     mask: list[tuple[int, int]] = None,
     progress: bool = True,
 ) -> Contig:
-    if len(sample_ids) == 0:
-        raise ValueError("No sample ids provided")
     vcf = pysam.VariantFile(vcf_path)  # opens the VCF or BCF file
-    vcf.subset_samples(sample_ids)
-
     if contig not in vcf.header.contigs:
         raise ValueError(f"Contig {contig} not found in VCF header")
+    if not sample_ids:
+        raise ValueError("Empty samples")
 
     start, end = interval
 
+    # convert diploid to phased haploid
+    sample_ids = jax.tree.map(lambda x: (x, x) if isinstance(x, str) else x, sample_ids)
+
+    # find unique ids to speed up iteration
+    all_ids = jax.tree.reduce(operator.or_, jax.tree.map(lambda a: {a}, sample_ids))
+    vcf.subset_samples(all_ids)
+
+    if sample_pops is None:
+        sample_pops = {sid: 0 for sid in all_ids}
+
+    all_pops = list(set(sample_pops.values()))
+    sample_pop_ids = jax.tree.map(
+        all_pops.index, jax.tree.map(sample_pops.__getitem__, sample_ids)
+    )
+
     def rec_iter():
         # Check if the samples are in the VCF header
+        gts = np.zeros((len(sample_ids), 2), dtype=np.int8)
+        esi = list(enumerate(sample_ids))
         for record in vcf.fetch(contig=contig, start=start, end=end):
-            gts = np.zeros((len(sample_ids), 2), dtype=np.int8)
-            for i, sample in enumerate(sample_ids):
-                gt = record.samples[sample]["GT"]
+            d = {p: 0 for p in all_pops}
+            n = {p: 0 for p in all_pops}
+            for i, sids in esi:
+                if (sids[0] != sids[1]) and not all(
+                    record.samples[s].phased for s in sids
+                ):
+                    raise ValueError(
+                        "Attempting to record genotype for {sids[0]}|{sids[1]}, but "
+                        "the variant is not phased."
+                    )
+                gt = [record.samples[s]["GT"][j] for j, s in enumerate(sids)]
                 gts[i] = [-1 if x is None else x for x in gt]  # missing data
-            yield dict(pos=record.pos, gts=gts)
+                for j in range(2):
+                    s = sids[j]
+                    nmiss = gts[i][j] >= 0
+                    d[sample_pops[s]] += gts[i][j] * nmiss
+                    n[sample_pops[s]] += nmiss
+            if (gts <= 1).all():
+                # ignore multi-allelic sites
+                v = tuple(n.values())
+                yield dict(pos=record.pos, gts=gts, afs=(v, d))
 
     ri = rec_iter()
 
@@ -254,16 +324,18 @@ def _from_vcf(
             logger.warning("bcftools not found, progress bar disabled")
             logger.debug("Exception was: {}", e)
 
-    return _from_iter(
+    ret = _from_iter(
         ri,
         start=start,
         end=end,
-        N=len(sample_ids),
+        N=len(sample_pops),
         window_size=window_size,
         genetic_map=genetic_map,
         ld_buckets=ld_buckets,
         mask=mask,
     )
+    H = (ret.hets, np.array(sample_pop_ids))
+    return ret._replace(hets=H, populations=tuple(all_pops))
 
 
 Contig.from_vcf = _from_vcf
@@ -295,7 +367,16 @@ def _from_psmcfa(psmcfa_path: str, contig_name: str, window_size: int = 100) -> 
             n[seq == b"N"] = 0  # account for missing data
             data = np.stack([n, d], 1)[None]
             afs = np.ones(1)
-            return Contig(hets=data, afs=afs, ld=None, window_size=window_size)
+            N, L, _ = data.shape
+            assert data.shape == (N, L, 2)
+            pop = np.full([N, 2], -1, dtype=np.int8)
+            return Contig(
+                hets=(data, pop),
+                afs=afs,
+                ld=None,
+                window_size=window_size,
+                populations=(-1,),
+            )
     raise ValueError(
         f"No contig named '{contig_name}' was encountered in {psmcfa_path}"
     )
@@ -330,7 +411,7 @@ def _chunk_het_matrix(
     chunked = np.lib.stride_tricks.as_strided(
         padded_data, shape=new_shape, strides=new_strides
     )
-    return np.copy(chunked.reshape(-1, S, 2))
+    return np.copy(chunked)
 
 
 def init_mcmc_data(
