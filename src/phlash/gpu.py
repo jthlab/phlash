@@ -291,7 +291,7 @@ class _PSMCKernelBase:
             ASSERT_DRV(err)
         (err,) = cuda.cuStreamSynchronize(self._stream)
         ASSERT_DRV(err)
-        assert np.all(ll < 0)
+        assert np.all(ll <= 0), ll[ll > 0]
         if grad:
             dll = PSMCParams(
                 b=dlog[..., 0, :],
