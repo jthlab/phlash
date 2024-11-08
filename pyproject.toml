@@ -12,7 +12,7 @@ dependencies = [
     "loguru<1.0.0,>=0.7.2",
     "matplotlib<4.0.0,>=3.8.2",
     "msprime>=1.3.2",
-    "numpy>1.25",
+    "numpy>=1.24",
     "optax<1.0.0,>=0.1.9",
     "plotly<6.0.0,>=5.18.0",
     "scipy<2.0.0,>=1.12.0",
@@ -32,6 +32,7 @@ dependencies = [
     "joblib>=1.4.2",
     "platformdirs>=4.3.6",
     "equinox>=0.11.8",
+    "optimistix>=0.0.9",
 ]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
@@ -61,15 +62,6 @@ includes = []
 
 [tool.pdm.version]
 source = "scm"
-
-[tool.pdm.dev-dependencies]
-dev = [
-    "pytest>=8.0.0",
-    "ruff>=0.5.3",
-    "scikit-allel>=1.3.8",
-    "pandas-plink>=2.3.1",
-    "mpmath>=1.3.0",
-]
 
 [tool.isort]
 profile = "black"
@@ -115,3 +107,6 @@ ignore = ["F722"]
 
 [tool.black]
 line-length = 88
+
+[dependency-groups]
+dev = ["pytest>=8.0.0", "ruff>=0.5.3", "scikit-allel>=1.3.8", "mpmath>=1.3.0", "jupyter>=1.1.1", "notebook<7"]
