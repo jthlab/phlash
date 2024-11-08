@@ -33,6 +33,7 @@ dependencies = [
     "platformdirs>=4.3.6",
     "equinox>=0.11.8",
     "optimistix>=0.0.9",
+    "osqp>=0.6.7post1",
 ]
 requires-python = ">=3.10,<4.0"
 readme = "README.md"
