@@ -121,6 +121,11 @@ def fit(
         # convert list-of-pytrees to pytree of arrays
         lds = {k: LdStats.summarize(v) for k, v in lds.items() if v}  # v could be empty
     # to conserve memory, we get rid of data at this point
+    try:
+        num_samples = next(d.hets.shape[0] for d in data if d.hets is not None)
+    except StopIteration:
+        raise ValueError("No data found")
+    logger.debug("n={}", num_samples)
     del data
     # the mutation rate per generation, if known.
     mutation_rate = options.get("mutation_rate")
@@ -184,13 +189,17 @@ def fit(
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
         N0 = None
+        # If there are n samples coalescing at rate c then the rate of first
+        # coalescence is n * c.
+        # so first coalescence X ~ Exp(n/2N0). Then find t such that p(X <= t) = 1/M:
+        # 1 - exp(-(n/2N)t) = 1/M => t = -log(1 - 1/M) / (n / 2N)
         if mutation_rate is not None:
             N0 = theta / 4 / mutation_rate
-            options.setdefault("t1", 1e1 / 2 / N0)
-            options.setdefault("tM", 1e6 / 2 / N0)
             logger.debug("N0={}", N0)
-        t1 = options.get("t1", 1e-4)
+        t1 = options.get("t1", -jnp.log1p(-1.0 / 16) / num_samples)
         tM = options.get("tM", 15.0)
+        assert t1 < tM
+        logger.debug("t1={:g} tM={:f} N0={:.0f}", t1, tM, N0)
         rho = options.get("rho_over_theta", 1.0) * theta
         # this pattern is similar to the psmc default, but we have fewer params
         # (16) to use, so are a little more conservative with parameter tying
