@@ -291,7 +291,17 @@ class _PSMCKernelBase:
             ASSERT_DRV(err)
         (err,) = cuda.cuStreamSynchronize(self._stream)
         ASSERT_DRV(err)
-        assert np.all(ll <= 0), ll[ll > 0]
+
+        # check that the log likelihood is negative
+        if not np.isfinite(ll):
+            msg = "log likelihood is not negative. "
+            msg += "the following indices has non-negative/NaN/Inf log likelihood: \n"
+            coords = (~np.isfinite(ll)).nonzero()
+            for ii in zip(*coords):
+                lbl = ",".join(map(str, ii))
+                msg += f"ll[{lbl}]={ll[ii]};\n"
+            raise ValueError(msg)
+
         if grad:
             dll = PSMCParams(
                 b=dlog[..., 0, :],
