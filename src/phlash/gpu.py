@@ -293,7 +293,7 @@ class _PSMCKernelBase:
         ASSERT_DRV(err)
 
         # check that the log likelihood is negative
-        if not np.isfinite(ll):
+        if not np.isfinite(ll).all():
             msg = "log likelihood is not negative. "
             msg += "the following indices has non-negative/NaN/Inf log likelihood: \n"
             coords = (~np.isfinite(ll)).nonzero()
