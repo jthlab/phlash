@@ -17,6 +17,7 @@ from loguru import logger
 from scipy.interpolate import PPoly
 
 from phlash.ld import calc_ld
+from phlash.ld.data import LdStats
 
 
 class Contig(NamedTuple):
@@ -34,10 +35,11 @@ class Contig(NamedTuple):
     >>> Contig.from_ts(ts=ts, nodes=[(0, 1), (2, 3)])
     """
 
-    hets: tuple[Int8[Array, "N L 2"], Int8[Array, "N 2"]]  # noqa: F722
+    hets: Int8[Array, "N L 2"]  # noqa: F722
     afs: Int[Array, "n"]  # noqa: F821
     ld: dict[tuple[float, float], float]
     window_size: int
+    pop_indices: Int8[Array, "N 2"]
     populations: tuple[str]
 
     @property
@@ -46,7 +48,21 @@ class Contig(NamedTuple):
 
     def chunk(self, overlap, chunk_size, window_size):
         return _chunk_het_matrix(
-            het_matrix=self.hets[1], overlap=overlap, chunk_size=chunk_size
+            het_matrix=self.hets, overlap=overlap, chunk_size=chunk_size
+        )
+
+    @classmethod
+    def from_raw(cls, hets):
+        N = hets.shape[0]
+        w = hets[0, 0, 0]
+        assert np.all(hets[..., 0] == w)
+        return cls(
+            hets,
+            afs=None,
+            ld=None,
+            window_size=w,
+            pop_indices=np.zeros(N, dtype=np.int8),
+            populations=(0,),
         )
 
 
@@ -139,7 +155,9 @@ def _from_iter(
             genetic_pos.append(R(rec["pos"]))
             genotypes.append(gts)
 
-    ret = Contig(hets=hets, afs=afs, ld=None, window_size=w, populations=None)
+    ret = Contig(
+        hets=hets, afs=afs, ld=None, window_size=w, populations=None, pop_indices=None
+    )
 
     if genetic_map is not None:
         if ld_buckets is None:
@@ -232,11 +250,11 @@ def _from_ts(
     afsf = afs.reshape(-1)
     afsf[0] = afsf[-1] = 0  # mask out non-seg entries
     k = tuple([n - 1 for n in afs.shape])
-    H = (ret.hets, np.array(node_pops, dtype=np.int8))
-    (N, L, _) = H[0].shape
-    assert H[0].shape == (N, L, 2)
-    assert H[1].shape == (N, 2)
-    return ret._replace(hets=H, afs={k: afs}, populations=all_pops)
+    pop_indices = np.array(node_pops, dtype=np.int8)
+    (N, L, _) = ret.hets.shape
+    assert ret.hets.shape == (N, L, 2)
+    assert pop_indices.shape == (N, 2)
+    return ret._replace(afs={k: afs}, populations=all_pops, pop_indices=pop_indices)
 
 
 Contig.from_ts = _from_ts
@@ -334,8 +352,8 @@ def _from_vcf(
         ld_buckets=ld_buckets,
         mask=mask,
     )
-    H = (ret.hets, np.array(sample_pop_ids))
-    return ret._replace(hets=H, populations=tuple(all_pops))
+    pop_indices = np.array(sample_pop_ids)
+    return ret._replace(populations=tuple(all_pops), pop_indices=pop_indices)
 
 
 Contig.from_vcf = _from_vcf
@@ -371,11 +389,12 @@ def _from_psmcfa(psmcfa_path: str, contig_name: str, window_size: int = 100) -> 
             assert data.shape == (N, L, 2)
             pop = np.full([N, 2], -1, dtype=np.int8)
             return Contig(
-                hets=(data, pop),
+                hets=data,
                 afs=afs,
                 ld=None,
                 window_size=window_size,
                 populations=(-1,),
+                pop_indices=pop,
             )
     raise ValueError(
         f"No contig named '{contig_name}' was encountered in {psmcfa_path}"
@@ -414,7 +433,7 @@ def _chunk_het_matrix(
     return np.copy(chunked)
 
 
-def init_mcmc_data(
+def init_chunks(
     data: list[Contig],
     window_size: int,
     overlap: int,
@@ -427,25 +446,44 @@ def init_mcmc_data(
     # this has to succeed, we can't have all the het matrices empty
     if all(ds.L is None for ds in data):
         raise ValueError("None of the contigs have a length")
-    chunk_size = int(min(0.2 * ds.L / window_size for ds in data if ds.L))
+    chunk_size = int(min(0.2 * ds.L / ds.window_size for ds in data if ds.L))
     if chunk_size < 10 * overlap:
         logger.warning(
             "The chunk size is {}, which is less than 10 times the overlap ({}).",
             chunk_size,
             overlap,
         )
-    # merge afs
-    afss = {}
-    for ds in data:
-        for n in ds.afs:
-            afss.setdefault(n, np.zeros(n - 1, dtype=int))
-            afss[n] += ds.afs[n]
     # collect chunks
     chunks = [
         ds.chunk(overlap=overlap, chunk_size=chunk_size, window_size=window_size)
         for ds in data
     ]
     assert len({ch.shape[-1] for ch in chunks}) == 1
-    assert all(ch.ndim == 3 for ch in chunks)
-    assert all(ch.shape[2] == 2 for ch in chunks)
-    return np.sum(afss, 0), np.concatenate(chunks, 0)
+    assert all(ch.ndim == 4 for ch in chunks)
+    assert all(ch.shape[3] == 2 for ch in chunks)
+    return np.concatenate(chunks, 0)
+
+
+def init_afs(data: list[Contig]) -> dict[int, np.ndarray]:
+    # merge afs
+    afss = {}
+    for ds in data:
+        if ds.afs is None:
+            continue
+        for n, a in ds.afs.items():
+            afss.setdefault(n, np.zeros_like(a))
+            afss[n] += a
+    return afss
+
+
+def init_ld(data: list[Contig]) -> dict[tuple[float, float], np.ndarray]:
+    # merge ld
+    lds = {}
+    for d in data:
+        if d.ld is not None:
+            for k, v in d.ld.items():
+                lds.setdefault(k, []).extend(v)
+    if lds:
+        # convert list-of-pytrees to pytree of arrays
+        lds = {k: LdStats.summarize(v) for k, v in lds.items() if v}  # v could be empty
+    return lds

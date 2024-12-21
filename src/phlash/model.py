@@ -61,18 +61,17 @@ def log_density(
     pis = pis.clip(0, 1)
     pps = vmap(lambda pi: pp._replace(pi=pi))(pis)
     l1 = log_prior(mcp)
-    l2 = vmap(kern.loglik, (0, 0))(pps, inds).sum()
+    l2 = kern.loglik(pps, inds).sum()
 
     # afs contribution, if present
     l3 = 0.0
     if afs is not None:
         for n in afs:
-            T = afs_transform.get(n, jnp.eye(n - 1))
-            assert T.ndim == 2
-            assert T.shape[1] == n - 1
-            etbl = dm.eta.etbl(n)
+            assert len(n) == 1
+            T = afs_transform.get(n, lambda a: a)
+            etbl = dm.eta.etbl(n[0])
             esfs = etbl / etbl.sum()
-            l3 += xlogy(T @ afs[n], T @ esfs).sum()
+            l3 += xlogy(T(afs[n][1:-1]), T(esfs)).sum()
 
     # ld contribution, if present
     l4 = 0.0

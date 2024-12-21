@@ -174,37 +174,20 @@ class _PSMCKernelBase:
         return np.float32
 
     def __call__(
-        self, pp: PSMCParams, index: int, grad: bool, barrier: threading.Barrier
+        self, pp: PSMCParams, inds: int, grad: bool, barrier: threading.Barrier
     ) -> tuple[float, PSMCParams]:
-        logger.trace("pp={}, index={}, grad={}", pp, index, grad)
+        logger.trace("pp={}, inds={}, grad={}", pp, inds, grad)
         M = self._M
         N = self._N
-        added_S = False
         pa = np.stack(pp, -2)
-        inds = np.atleast_1d(index)
-        if index.ndim == 0:
-            added_S = True
-            assert pa.shape == (6, M)
-            pa = pa[None]
-        S = inds.shape[0]
-        assert inds.shape == (S,)
+        S = inds.shape[-1]
+        assert inds.shape == (1, S)
+        B = pa.shape[0]
+        assert pa.shape == (B, S, 6, M)
         assert np.all(0 <= inds) & np.all(
             inds < self._N
         ), f"0 <= {inds.min()=} < {inds.max()=} < N"
         # pps should be a stack of params, one for each dataset
-        added_B = False
-        if pa.ndim == 2:
-            assert pa.shape == (6, M)
-            pa = np.repeat(pa[None, None], S, axis=1)
-            assert pa.shape == (1, S, 6, M)
-            added_B = True
-        if pa.ndim == 3:
-            assert pa.shape == (S, 6, M)
-            pa = pa[None]
-            added_B = True
-        assert pa.ndim == 4
-        B = pa.shape[0]
-        assert pa.shape == (B, S, 6, M)
         assert np.isfinite(pa).all(), "not all parameters finite"
         dlog = np.zeros([B, S, 6, M], dtype=self.float_type)
         ll = np.zeros([B, S], dtype=np.float64)
@@ -322,16 +305,7 @@ class _PSMCKernelBase:
             assert np.isfinite(a).all()
             return a
 
-        ret = jax.tree.map(f, ret)
-
-        # strip off the additional batch dimensions we added earlier
-        if added_B and added_S:
-            ret = jax.tree.map(lambda a: a[0, 0, ...], ret)
-        elif added_B:
-            ret = jax.tree.map(lambda a: a[0, ...], ret)
-        elif added_S:
-            ret = jax.tree.map(lambda a: a[:, 0, ...], ret)
-        return ret
+        return jax.tree.map(f, ret)
 
 
 class PSMCKernel:
@@ -366,19 +340,19 @@ class PSMCKernel:
         return np.float32
 
     @singledispatchmethod
-    def loglik(self, pp: PSMCParams, index: int):
+    def loglik(self, pp: PSMCParams, inds: int):
         def safelog(x):
             x_bad = x <= 0.0
             x_safe = jnp.where(x_bad, 1.0, x)
             return jnp.where(x_bad, -1000.0, jnp.log(x_safe))
 
         log_params = jax.tree.map(safelog, pp)
-        return _psmc_ll(log_params, index=index, kern=self)
+        return _psmc_ll(log_params, inds=inds, kern=self)
 
     # convenience overload mostly to help test code
     @loglik.register
-    def _(self, dm: phlash.size_history.DemographicModel, index):
-        return self.loglik(PSMCParams.from_dm(dm), index)
+    def _(self, dm: phlash.size_history.DemographicModel, inds):
+        return self.loglik(PSMCParams.from_dm(dm), inds)
 
     def _initialize_devices(self, num_gpus: int):
         """
@@ -398,7 +372,7 @@ class PSMCKernel:
         return ret
 
     def __call__(
-        self, pp: PSMCParams, index: int, grad: bool
+        self, pp: PSMCParams, inds: int, grad: bool
     ) -> tuple[float, PSMCParams]:
         def f(a):
             assert np.isfinite(a).all()
@@ -410,9 +384,8 @@ class PSMCKernel:
             logger.debug("pp:{}", pp)
             raise
         # Split indices array across GPUs
-        indices = np.atleast_1d(index)
         D = len(self.devices)
-        split_indices = np.array_split(indices, D)
+        split_indices = np.array_split(inds, D)
         # threads = []
         assert D == len(self.gpu_kernels)
         results = [None] * D
@@ -435,8 +408,6 @@ class PSMCKernel:
         #     thread.join()
 
         ret = self._combine_results(results)
-        if index.ndim == 0:
-            ret = jax.tree.map(np.squeeze, ret)
         return ret
 
     def _combine_results(self, results):
@@ -456,34 +427,50 @@ class PSMCKernel:
 
 
 @partial(custom_vjp, nondiff_argnums=(2,))
-def _psmc_ll(log_params: PSMCParams, index, kern) -> float:
-    return _psmc_ll_helper(log_params, index=index, kern=kern, grad=False)
+def _psmc_ll(log_params: PSMCParams, inds, kern) -> float:
+    return _psmc_ll_helper(log_params, inds=inds, kern=kern, grad=False)
 
 
-def _psmc_ll_fwd(log_params, index, kern):
-    return _psmc_ll_helper(log_params, index=index, kern=kern, grad=True)
+def _psmc_ll_fwd(log_params, inds, kern):
+    return _psmc_ll_helper(log_params, inds=inds, kern=kern, grad=True)
 
 
-def _psmc_ll_helper(log_params: PSMCParams, index, kern, grad):
+def _psmc_ll_helper(log_params: PSMCParams, inds, kern, grad):
     params = jax.tree.map(jnp.exp, log_params)
-    result_shape_dtype = jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64)
+    (S,) = inds.shape
+    M = kern.M
+    assert M == params.M
+    assert log_params.pi.shape == (S, M)
+    result_shape_dtype = jax.ShapeDtypeStruct(shape=(S,), dtype=jnp.float64)
     if grad:
         result_shape_dtype = (
             result_shape_dtype,
             PSMCParams(
                 *[
-                    jax.ShapeDtypeStruct(shape=(params.M,), dtype=kern.float_type)
+                    jax.ShapeDtypeStruct(
+                        shape=(
+                            S,
+                            M,
+                        ),
+                        dtype=kern.float_type,
+                    )
                     for p in params
                 ],
             ),
         )
-    return jax.pure_callback(
-        kern, result_shape_dtype, pp=params, index=index, grad=grad, vectorized=True
+    ret = jax.pure_callback(
+        kern,
+        result_shape_dtype,
+        pp=params,
+        inds=inds,
+        grad=grad,
+        vmap_method="expand_dims",
     )
+    return ret
 
 
 def _psmc_ll_bwd(kern, df, g):
-    return jax.tree.map(lambda a: g * a, df), None
+    return jax.tree.map(lambda a: g[:, None] * a, df), None
 
 
 _psmc_ll.defvjp(_psmc_ll_fwd, _psmc_ll_bwd)

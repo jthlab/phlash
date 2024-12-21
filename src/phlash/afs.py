@@ -1,5 +1,20 @@
+from typing import NamedTuple
+
+import jax
 import numpy as np
 import scipy
+
+
+class LinearAfsTransform(NamedTuple):
+    A: jax.Array
+
+    def __call__(self, x: jax.Array) -> jax.Array:
+        return self.A @ x
+
+
+class IdentityAfsTransform(NamedTuple):
+    def __call__(self, x: jax.Array) -> jax.Array:
+        return x
 
 
 def fold_transform(n):
@@ -31,3 +46,12 @@ def bws_transform(afs, alpha: float = 0.1) -> np.ndarray:
         j = np.arange(n - 1)[None]
         ret = np.concatenate([ret, (i <= j).astype(float)])
     return ret
+
+
+def default_afs_transform(afs: np.ndarray) -> np.ndarray:
+    if afs.ndim > 1:
+        return IdentityAfsTransform()
+
+    T1 = fold_transform(afs.shape[0] - 1)
+    T2 = bws_transform(T1 @ afs[1:-1])
+    return LinearAfsTransform(T2 @ T1)
