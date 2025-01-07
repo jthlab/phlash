@@ -8,7 +8,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import nvidia.cuda_nvrtc.lib
-from cuda import cuda, cudart, nvrtc
+from cuda.bindings import driver as cuda
+from cuda.bindings import nvrtc
+from cuda.bindings import runtime as cudart
 from jax import custom_vjp
 from loguru import logger
 

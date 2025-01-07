@@ -36,7 +36,7 @@ dependencies = [
     "osqp>=0.6.7post1",
     "lineax>=0.0.7",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 readme = "README.md"
 license = {text = "MIT"}
 
@@ -118,5 +118,5 @@ line-length = 88
 
 [dependency-groups]
 dev = [
-    "jupytext>=1.16.6",
+    "pytest>=8.3.4",
 ]
