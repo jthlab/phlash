@@ -444,6 +444,9 @@ def init_chunks(
     """Chunk up the data. If chunk_size is missing, set it to ~1/5th of the shortest
     contig. (This may not be optimal)."""
     # this has to succeed, we can't have all the het matrices empty
+    if not all(c.populations == data[0].populations for c in data):
+        raise ValueError("All contigs must be defined on the same populations")
+    pops = data[0].populations
     if all(ds.L is None for ds in data):
         raise ValueError("None of the contigs have a length")
     chunk_size = int(min(0.2 * ds.L / ds.window_size for ds in data if ds.L))
@@ -461,7 +464,10 @@ def init_chunks(
     assert len({ch.shape[-1] for ch in chunks}) == 1
     assert all(ch.ndim == 4 for ch in chunks)
     assert all(ch.shape[3] == 2 for ch in chunks)
-    return np.concatenate(chunks, 0)
+    combined_chunks = np.concatenate(chunks, 0)
+    combined_pop_indices = np.concatenate([ds.pop_indices for ds in data], 0)
+    assert len(combined_chunks) == len(combined_pop_indices)
+    return combined_chunks, pops, combined_pop_indices
 
 
 def init_afs(data: list[Contig]) -> dict[int, np.ndarray]:

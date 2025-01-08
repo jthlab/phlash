@@ -1,15 +1,15 @@
 "Different parameterizations needed for MCMC and HMM"
 
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import jax
 import jax.numpy as jnp
-import jax_dataclasses as jdc
 from jaxtyping import Array, Float
 
 import phlash.size_history
 import phlash.transition
-from phlash.util import Pattern, softplus_inv
+from phlash.util import Pattern
 
 
 class PSMCParams(NamedTuple):
@@ -48,25 +48,46 @@ class PSMCParams(NamedTuple):
         )
 
 
-@jdc.pytree_dataclass
+@dataclass(kw_only=True)
 class MCMCParams:
-    pattern: jdc.Static[str]
+    pattern_str: str = field(metadata=dict(static=True))
     t_tr: jax.Array
-    c_tr: jax.Array
     log_rho_over_theta: float
-    theta: jdc.Static[float]
-    alpha: jdc.Static[float]
-    beta: jdc.Static[float]
-    window_size: jdc.Static[int]
-    N0: jdc.Static[float] = None
+    theta: float = field(metadata=dict(static=True))
+    alpha: float = field(metadata=dict(static=True))
+    beta: float = field(metadata=dict(static=True))
+    window_size: int = field(metadata=dict(static=True))
+    N0: float = field(default=None, metadata=dict(static=True))
+
+    def to_pp(self) -> PSMCParams:
+        dm = self.to_dm()
+        dm = dm._replace(rho=self.window_size * dm.rho)
+        return PSMCParams.from_dm(dm)
+
+    # @classmethod
+    # def default(cls, theta):
+    #     return cls.from_linear(
+    #         pattern = "14*1+1*2",
+    #         t1=1e-4,
+    #         tM=15.0,
+    #         log_rho_over_theta=0.,
+    #         theta=theta,
+    #         alpha=0.0,
+    #         beta=0.0,
+    #         window_size=100,
+    #         N0=1e4,
+    #     )
+
+    @property
+    def pattern(self) -> Pattern:
+        return Pattern(self.pattern_str)
 
     @classmethod
     def from_linear(
         cls,
-        pattern: str,
+        pattern_str: str,
         t1: float,
         tM: float,
-        c: jax.Array,
         theta: float,
         rho: float,
         alpha: float = 0.0,
@@ -76,10 +97,8 @@ class MCMCParams:
     ) -> "MCMCParams":
         dtM = tM - t1
         t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])
-        assert len(Pattern(pattern)) == len(c)  # one c per epoch
         return cls(
-            pattern=pattern,
-            c_tr=softplus_inv(c),
+            pattern_str=pattern_str,
             t_tr=t_tr,
             log_rho_over_theta=jnp.log(rho / theta),
             theta=theta,
@@ -89,26 +108,22 @@ class MCMCParams:
             N0=N0,
         )
 
-    def to_dm(self) -> phlash.size_history.DemographicModel:
-        pat = Pattern(self.pattern)
-        assert len(pat) == len(self.c)
+    @property
+    def times(self):
         t1, tM = self.t
-        t = jnp.insert(jnp.geomspace(t1, tM, pat.M - 1), 0, 0.0)
-        c = jnp.array(pat.expand(self.c))
-        eta = phlash.size_history.SizeHistory(t=t, c=c)
-        assert eta.t.shape == eta.c.shape
-        return phlash.size_history.DemographicModel(
-            eta=eta, theta=self.theta, rho=self.rho
-        )
+        return jnp.insert(jnp.geomspace(t1, tM, self.M - 1), 0, 0.0)
 
-    def to_pp(self) -> PSMCParams:
-        dm = self.to_dm()
-        dm = dm._replace(rho=self.window_size * dm.rho)
-        return PSMCParams.from_dm(dm)
+    @property
+    def t1(self):
+        return self.t[0]
+
+    @property
+    def tM(self):
+        return self.t[1]
 
     @property
     def M(self):
-        return Pattern(self.pattern).M
+        return self.pattern.M
 
     @property
     def rho_over_theta(self):
@@ -123,11 +138,3 @@ class MCMCParams:
         t1, dtM = jnp.exp(self.t_tr)
         tM = t1 + dtM
         return t1, tM
-
-    @property
-    def c(self):
-        return jax.nn.softplus(self.c_tr)
-
-    @property
-    def log_c(self):
-        return jnp.log(self.c)

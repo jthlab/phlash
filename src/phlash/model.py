@@ -1,3 +1,5 @@
+from dataclasses import asdict, dataclass
+
 import jax
 import jax.numpy as jnp
 from jax import vmap
@@ -7,6 +9,56 @@ from jaxtyping import Array, Float, Float64, Int8, Int64
 import phlash.hmm
 from phlash.ld.expected import expected_ld
 from phlash.params import MCMCParams
+from phlash.util import softplus_inv
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class PhlashMCMCParams(MCMCParams):
+    c_tr: jax.Array
+
+    @property
+    def c(self):
+        return jax.nn.softplus(self.c_tr)
+
+    @property
+    def log_c(self):
+        return jnp.log(self.c)
+
+    def to_dm(self) -> phlash.size_history.DemographicModel:
+        c = jnp.array(self.pattern.expand(self.c))
+        eta = phlash.size_history.SizeHistory(t=self.times, c=c)
+        assert eta.t.shape == eta.c.shape
+        return phlash.size_history.DemographicModel(
+            eta=eta, theta=self.theta, rho=self.rho
+        )
+
+    @classmethod
+    def from_linear(
+        cls,
+        c: jax.Array,
+        pattern_str: str,
+        t1: float,
+        tM: float,
+        theta: float,
+        rho: float,
+        alpha: float = 0.0,
+        beta: float = 0.0,
+        window_size: int = 100,
+        N0: float = None,
+    ):
+        mcp = MCMCParams.from_linear(
+            pattern_str=pattern_str,
+            t1=t1,
+            tM=tM,
+            theta=theta,
+            rho=rho,
+            alpha=alpha,
+            beta=beta,
+            window_size=window_size,
+            N0=N0,
+        )
+        return cls(c_tr=softplus_inv(c), **asdict(mcp))
 
 
 def log_prior(mcp: MCMCParams) -> float:
@@ -25,8 +77,8 @@ def log_prior(mcp: MCMCParams) -> float:
 
 def log_density(
     mcp: MCMCParams,
-    c: Float64[Array, "3"],
-    inds: Int64[Array, "batch"],  # noqa: F821
+    weights: Float64[Array, "4"],
+    inds: tuple[int, int],  # Int64[Array, "batch"],  # noqa: F821
     warmup: Int8[Array, "c ell"],
     kern: "phlash.gpu.PSMCKernel",
     afs: Int64[Array, "n"] = None,  # noqa: F821
@@ -52,16 +104,12 @@ def log_density(
     """
     dm = mcp.to_dm()
     pp = mcp.to_pp()
-    if warmup is None:
-        pis = vmap(lambda _: pp.pi)(inds)  # (I, M)
-    else:
-        pis = vmap(lambda pp, d: phlash.hmm.psmc_ll(pp, d)[0], (None, 0))(
-            pp, warmup
-        )  # (I, M)
-    pis = pis.clip(0, 1)
-    pps = vmap(lambda pi: pp._replace(pi=pi))(pis)
+    pi = pp.pi
+    if warmup is not None:
+        pi = phlash.hmm.psmc_ll(pp, warmup)[0].clip(0, 1)
+    pp = pp._replace(pi=pi)
     l1 = log_prior(mcp)
-    l2 = kern.loglik(pps, inds).sum()
+    l2 = kern.loglik(pp, inds)
 
     # afs contribution, if present
     l3 = 0.0
@@ -100,5 +148,5 @@ def log_density(
         l4 += l4s.sum()
 
     ll = jnp.array([l1, l2, l3, l4])
-    ret = jnp.dot(c, ll)
+    ret = jnp.dot(weights, ll)
     return jnp.where(jnp.isfinite(ret), ret, -jnp.inf)

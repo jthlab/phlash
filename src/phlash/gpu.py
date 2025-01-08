@@ -101,14 +101,14 @@ class _PSMCKernelBase:
 
     def __init__(self, M: int, data: jax.Array, double_precision: bool = False):
         CudaInitializer.initialize_cuda()
-        assert data.ndim == 3
+        assert data.ndim == 4
         data = data.astype(np.int8)
         assert data.dtype == np.int8
         assert data.min() >= 0
         assert (data[..., 0] >= data[..., 1]).all()
         self.double_precision = double_precision
-        self._N, self._L = data.shape[:2]
-        assert data.shape[2] == 2
+        self._N, self._C, self._L = data.shape[:3]
+        assert data.shape[3] == 2
         # copy the data onto the gpu once and for all
         err, self._data_gpu = cuda.cuMemAlloc(data.nbytes)
         try:
@@ -180,15 +180,15 @@ class _PSMCKernelBase:
     ) -> tuple[float, PSMCParams]:
         logger.trace("pp={}, inds={}, grad={}", pp, inds, grad)
         M = self._M
+        C = self._C
         N = self._N
         pa = np.stack(pp, -2)
-        S = inds.shape[-1]
-        assert inds.shape == (1, S)
+        S = inds[0].shape[-1]
+        assert inds.shape == (2, 1, S)
         B = pa.shape[0]
         assert pa.shape == (B, S, 6, M)
-        assert np.all(0 <= inds) & np.all(
-            inds < self._N
-        ), f"0 <= {inds.min()=} < {inds.max()=} < N"
+        assert np.all(0 <= inds[0]) & np.all(inds[0] < N)
+        assert np.all(0 <= inds[1]) & np.all(inds[1] < C)
         # pps should be a stack of params, one for each dataset
         assert np.isfinite(pa).all(), "not all parameters finite"
         dlog = np.zeros([B, S, 6, M], dtype=self.float_type)
@@ -197,7 +197,8 @@ class _PSMCKernelBase:
         # TODO these memory allocations need only happen once, but they are
         # cheap compared to the kernel call
         # indices array
-        inds = inds.astype(np.int64)
+        inds = np.ravel_multi_index(tuple(inds), (self._N, self._C)).astype(np.int64)
+        assert inds.shape == (1, S)
         if self._inds_gpu is None:
             err, self._inds_gpu = cuda.cuMemAlloc(inds.nbytes)
             ASSERT_DRV(err)
@@ -439,21 +440,17 @@ def _psmc_ll_fwd(log_params, inds, kern):
 
 def _psmc_ll_helper(log_params: PSMCParams, inds, kern, grad):
     params = jax.tree.map(jnp.exp, log_params)
-    (S,) = inds.shape
     M = kern.M
     assert M == params.M
-    assert log_params.pi.shape == (S, M)
-    result_shape_dtype = jax.ShapeDtypeStruct(shape=(S,), dtype=jnp.float64)
+    assert log_params.pi.shape == (M,)
+    result_shape_dtype = jax.ShapeDtypeStruct(shape=(), dtype=jnp.float64)
     if grad:
         result_shape_dtype = (
             result_shape_dtype,
             PSMCParams(
                 *[
                     jax.ShapeDtypeStruct(
-                        shape=(
-                            S,
-                            M,
-                        ),
+                        shape=(M,),
                         dtype=kern.float_type,
                     )
                     for p in params
@@ -472,7 +469,7 @@ def _psmc_ll_helper(log_params: PSMCParams, inds, kern, grad):
 
 
 def _psmc_ll_bwd(kern, df, g):
-    return jax.tree.map(lambda a: g[:, None] * a, df), None
+    return jax.tree.map(lambda a: g * a, df), None
 
 
 _psmc_ll.defvjp(_psmc_ll_fwd, _psmc_ll_bwd)
