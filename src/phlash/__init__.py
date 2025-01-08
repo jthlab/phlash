@@ -5,17 +5,21 @@
 import os
 import warnings
 
+import platformdirs
+
 # ignore some annoying warnings that show up in the packages we rely on
 for w in (FutureWarning, UserWarning):
     warnings.filterwarnings(action="ignore", module="stdpopsim", category=w)
 
 # this needs to occur before jax loads
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-import sys
 
 import jax
 
 jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_compilation_cache_dir", platformdirs.user_cache_dir("phlash"))
+
+import sys
 
 from phlash.data import Contig
 from phlash.fit.base import fit

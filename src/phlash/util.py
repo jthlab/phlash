@@ -40,6 +40,12 @@ class Pattern:
         assert len(x) == len(self)
         return sum([e * [xx] for e, xx in zip(self._epochs, x)], [])
 
+    def left_endpoints(self):
+        x = []
+        for e in self._epochs:
+            x.extend([True] + [False] * (e - 1))
+        return np.array(x)
+
 
 def tree_stack(trees):
     return jax.tree.map(lambda *v: jnp.stack(v), *trees)

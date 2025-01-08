@@ -14,7 +14,7 @@ import phlash.model
 from phlash.afs import default_afs_transform
 from phlash.kernel import get_kernel
 from phlash.ld.data import LdStats
-from phlash.params import MCMCParams
+from phlash.model import PhlashMCMCParams
 from phlash.size_history import DemographicModel
 from phlash.util import Pattern, tree_unstack
 
@@ -54,7 +54,7 @@ class BaseFitter:
         _check_jax_gpu()
         self.load_data()
         self.setup_gpu_kernel()
-        self.initialize_model()
+        self.initialize_particles()
         self.initialize_callback()  # for plotting
         self.initialize_optimizer()
 
@@ -81,12 +81,11 @@ class BaseFitter:
         max_samples = self.options.get("max_samples", 20)
         num_workers = self.options.get("num_workers")
         logger.info("Loading data...")
-        self.chunks = phlash.data.init_chunks(
+        (self.chunks, self.populations, self.pop_indices) = phlash.data.init_chunks(
             self.data, self.window_size, overlap, chunk_size, max_samples, num_workers
         )
         # collapse the first two dimensions
         logger.debug("chunks.shape={}", self.chunks.shape)
-        self.chunks = self.chunks.reshape((-1,) + self.chunks.shape[2:])
 
         # avoid storing a huge array on gpu if we're only going to use a small part of
         # it in expectation, we will sample at most S * niter rows of the data.
@@ -118,7 +117,7 @@ class BaseFitter:
         Initialize the GPU kernel for computations.
         """
         overlap = self.options.get("overlap", 500)
-        self.warmup_chunks, data_chunks = np.split(self.chunks, [overlap], axis=1)
+        self.warmup_chunks, data_chunks = np.split(self.chunks, [overlap], axis=2)
 
         self.train_kern = get_kernel(
             M=self.M,
@@ -160,7 +159,7 @@ class BaseFitter:
 
         self.elpd = jit(elpd)
 
-    def initialize_model(self):
+    def _initialize_model(self):
         """
         Initialize the MCMC model parameters and optimizer.
         """
@@ -188,8 +187,8 @@ class BaseFitter:
             # this pattern is similar to the psmc default, but we have fewer params
             # (16) to use, so are a little more conservative with parameter tying
             pat = "14*1+1*2"
-            init = MCMCParams.from_linear(
-                pattern=pat,
+            init = PhlashMCMCParams.from_linear(
+                pattern_str=pat,
                 rho=rho,
                 t1=t1,
                 tM=tM,
@@ -200,8 +199,12 @@ class BaseFitter:
                 N0=N0,
                 window_size=self.window_size,
             )
-        assert isinstance(init, MCMCParams)
+        assert isinstance(init, PhlashMCMCParams)
+        return init
+
+    def initialize_particles(self):
         # initialized raveled representation of state
+        init = self._initialize_model()
         x0, unravel = ravel_pytree(init)
         prior_mu = x0
         prior_prec = self.options.get("sigma", 0.5)
@@ -219,10 +222,10 @@ class BaseFitter:
         Iterate over the data.
         """
         while True:
-            inds = jax.random.choice(
-                self.get_key(), self.num_chunks, shape=(self.minibatch_size,)
-            )
-            yield inds
+            N, C = self.chunks.shape[:2]
+            inds0 = jax.random.choice(self.get_key(), N, shape=(self.minibatch_size,))
+            inds1 = jax.random.choice(self.get_key(), C, shape=(self.minibatch_size,))
+            yield (inds0, inds1)
 
     def initialize_callback(self):
         # build the plot callback
@@ -250,7 +253,7 @@ class BaseFitter:
             ret = vmap(DemographicModel.rescale, (0, None))(ret, self.mutation_rate)
         return ret
 
-    def fit_model(self):
+    def fit(self):
         """
         Run the optimization loop.
         """
@@ -262,12 +265,12 @@ class BaseFitter:
         # weights to multiply terms in log density
         # to have unbiased gradient estimates, need to pre-multiply the chunk term by
         # ratio
-        c = self.options.get(
-            "c", np.array([1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0])
+        weights = self.options.get(
+            "weights", np.array([1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0])
         )
         kw = dict(
             kern=self.train_kern,
-            c=c,
+            weights=weights,
             afs=self.afs,
             ld=self.ld,
             afs_transform=self.afs_transform,
@@ -352,8 +355,8 @@ class BaseFitter:
         Compute Watterson's estimator for mutation rate.
         """
         overlap = self.options.get("overlap", 500)
-        ch0 = self.chunks[:, overlap:]
-        w = ch0.sum((0, 1))
+        ch0 = self.chunks[:, :, overlap:]
+        w = ch0.sum(axis=(0, 1, 2))
         return w[1] / w[0]
 
     ## some useful properties
@@ -398,7 +401,8 @@ class BaseFitter:
         """
         Get the number of chunks.
         """
-        return len(self.chunks)
+        s = self.chunks.shape
+        return s[0] * s[1]
 
     @property
     def minibatch_size(self):
