@@ -75,20 +75,21 @@ class BaseFitter:
         # the amount overlap between adjacent windows, used to break long sequential hmm
         # observations into parallelizable batches. this should generally be left at the
         # default 500. see manuscript for more information on this parameter.
+        logger.info("Loading data...")
         overlap = self.options.get("overlap", 500)
         # the size of each "chunk", see manuscript. this is estimated from data.
         chunk_size = self.options.get("chunk_size")
         max_samples = self.options.get("max_samples", 20)
         num_workers = self.options.get("num_workers")
-        logger.info("Loading data...")
         (self.chunks, self.populations, self.pop_indices) = phlash.data.init_chunks(
             self.data, self.window_size, overlap, chunk_size, max_samples, num_workers
         )
-        # collapse the first two dimensions
+        # in the one population case, all the chunks are exchangeable, so we can just
+        # combine the first two dimensions
         logger.debug("chunks.shape={}", self.chunks.shape)
 
         # avoid storing a huge array on gpu if we're only going to use a small part of
-        # it in expectation, we will sample at most S * niter rows of the data.
+        # it in expectation, we will sample S * niter rows of the data.
         if self.num_chunks > 5 * self.minibatch_size * self.niter:
             # important: use numpy to do this _not_ jax. (jax will put it on the gpu
             # which causes the very problem we are trying to solve.)
@@ -104,12 +105,6 @@ class BaseFitter:
                 self.chunks.size / gb,
             )
         self.afs = phlash.data.init_afs(self.data)
-        if self.afs:
-            self.afs_transform = {
-                n: default_afs_transform(self.afs[n]) for n in self.afs
-            }
-        else:
-            self.afs_transform = None
         self.ld = phlash.data.init_ld(self.data)
 
     def setup_gpu_kernel(self):
@@ -129,7 +124,8 @@ class BaseFitter:
             return
 
         max_samples = self.options.get("max_samples", 20)
-        test_hets = self.test_data.hets[:max_samples]
+        # add a chunk axis, not used here
+        test_hets = self.test_data.hets[:max_samples, None]
         test_afs = self.test_data.afs
         test_ld = self.test_data.ld
         if test_ld is not None:
@@ -146,13 +142,15 @@ class BaseFitter:
             def _elpd_ll(mcp):
                 return self.log_density(
                     mcp,
-                    c=jnp.array([0.0, 1.0, 1.0, 1.0]),
-                    inds=jnp.arange(N_test),
+                    weights=jnp.array([0.0, 1.0, 1.0, 1.0]),
+                    inds=(jnp.arange(N_test), jnp.full(N_test, 0)),
                     kern=self.test_kernel,
                     warmup=None,
                     afs=test_afs,
                     ld=test_ld,
                     afs_transform=self.afs_transform,
+                    alpha=self.options.get("alpha", 0.0),
+                    beta=self.options.get("beta", 0.0),
                 )
 
             return _elpd_ll(mcps).mean()
@@ -194,8 +192,6 @@ class BaseFitter:
                 tM=tM,
                 c=jnp.ones(len(Pattern(pat))),  # len(c)==len(Pattern(pattern))
                 theta=theta,
-                alpha=self.options.get("alpha", 0.0),
-                beta=self.options.get("beta", 0.0),
                 N0=N0,
                 window_size=self.window_size,
             )
@@ -274,6 +270,8 @@ class BaseFitter:
             afs=self.afs,
             ld=self.ld,
             afs_transform=self.afs_transform,
+            alpha=self.options.get("alpha", 0.0),
+            beta=self.options.get("beta", 0.0),
         )
 
         logger.info("Starting optimization...")
@@ -281,6 +279,11 @@ class BaseFitter:
             self.niter, disable=not progress, desc="Fitting model"
         ) as self.pbar:
             for i in self.pbar:
+                # this prevents an extra recompile after the first iteration
+                # due to type promotion stuff
+                self.state = jax.tree.map(
+                    lambda a: jnp.astype(a, jnp.float64), self.state
+                )
                 self.state = self._optimization_step(next(di), **kw)
                 if self.converged(i):
                     break
@@ -329,6 +332,8 @@ class BaseFitter:
         Initialize the optimizer.
         """
         opt = optax.nadamw(learning_rate=self.options.get("learning_rate", 0.1))
+        # opt = optax.sgd(momentum=.1, nesterov=True,
+        # learning_rate=self.options.get("learning_rate", 1e-4))
         df = grad(self.log_density)
         self.svgd = blackjax.svgd(df, opt)
         self.state = self.svgd.init(self.particles)
@@ -339,7 +344,23 @@ class BaseFitter:
         """
         Compute the log density.
         """
-        return phlash.model.log_density(particle, **kwargs)
+
+        @vmap
+        def f(mcp, inds, warmup):
+            return phlash.model.log_density(
+                mcp=mcp,
+                weights=kwargs["weights"],
+                inds=inds,
+                warmup=warmup,
+                afs_transform=self.afs_transform,
+                afs=self.afs,
+                kern=kwargs["kern"],
+                alpha=self.options.get("alpha", 0.0),
+                beta=self.options.get("beta", 0.0),
+            )
+
+        mcps = vmap(lambda _: particle)(kwargs["inds"])
+        return f(mcps, kwargs["inds"], kwargs["warmup"]).sum()
 
     def _optimization_step(self, inds, **kwargs):
         """
@@ -357,7 +378,11 @@ class BaseFitter:
         overlap = self.options.get("overlap", 500)
         ch0 = self.chunks[:, :, overlap:]
         w = ch0.sum(axis=(0, 1, 2))
-        return w[1] / w[0]
+        # this is fairly wrong if compositing many chunks together.
+        N = self.chunks.shape[0]
+        i = np.arange(1, 2 * N)
+        H_n = (1 / i).sum()
+        return w[1] / w[0] / H_n
 
     ## some useful properties
     @property
@@ -418,5 +443,22 @@ class BaseFitter:
         return S
 
 
+class PhlashFitter(BaseFitter):
+    def load_data(self):
+        # in the one population case, all the chunks are exchangeable, so we can just
+        # merge all the chunks
+        super().load_data()
+        # convert afs to standard vector representation in the 1-pop case
+        if self.afs:
+            self.afs = {k: v.todense() for k, v in self.afs.items()}
+            self.afs_transform = {
+                n: default_afs_transform(self.afs[n]) for n in self.afs
+            }
+        else:
+            self.afs_transform = None
+        self.chunks = self.chunks.reshape(-1, *self.chunks.shape[2:])[:, None]
+        logger.debug("after merging: chunks.shape={}", self.chunks.shape)
+
+
 def fit(data, test_data=None, **options):
-    return BaseFitter(data, test_data, **options).fit_model()
+    return PhlashFitter(data, test_data, **options).fit()

@@ -20,7 +20,7 @@ def psmc(
     """
 
     logger.info("Reading PSMC data")
-    contigs = [c for f in psmcfa_files for c in Contig.from_psmcfa_iter(f, window_size)]
+    contigs = [Contig.from_psmcfa(f, None, window_size) for f in psmcfa_files]
     test_data = None
     if hold_out and len(contigs) > 1:
         test_data = contigs.pop(0)

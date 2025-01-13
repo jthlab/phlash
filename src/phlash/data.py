@@ -14,6 +14,7 @@ import tskit
 from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
+from momi3.jsfs import JSFS
 from scipy.interpolate import PPoly
 
 from phlash.ld import calc_ld
@@ -376,21 +377,20 @@ def _from_psmcfa(psmcfa_path: str, contig_name: str, window_size: int = 100) -> 
     # parse psmcfa file
     with pysam.FastxFile(psmcfa_path) as fx:
         for record in fx:
-            if contig_name != record.name:
+            if contig_name != record.name and contig_name is not None:
                 continue
-            logger.debug(f"Reading '{contig_name}' from {psmcfa_path}")
+            logger.debug(f"Reading '{record.name}' from {psmcfa_path}")
             seq = np.array(record.sequence, dtype="c")
             d = (seq == b"K").astype(np.int16)
             n = np.full_like(d, window_size)
             n[seq == b"N"] = 0  # account for missing data
             data = np.stack([n, d], 1)[None]
-            afs = np.ones(1)
             N, L, _ = data.shape
             assert data.shape == (N, L, 2)
             pop = np.full([N, 2], -1, dtype=np.int8)
             return Contig(
                 hets=data,
-                afs=afs,
+                afs=None,
                 ld=None,
                 window_size=window_size,
                 populations=(-1,),
@@ -446,6 +446,8 @@ def init_chunks(
     # this has to succeed, we can't have all the het matrices empty
     if not all(c.populations == data[0].populations for c in data):
         raise ValueError("All contigs must be defined on the same populations")
+    if not all(np.all(d.pop_indices == data[0].pop_indices) for d in data):
+        raise ValueError("All contigs must have the same population indices")
     pops = data[0].populations
     if all(ds.L is None for ds in data):
         raise ValueError("None of the contigs have a length")
@@ -464,10 +466,10 @@ def init_chunks(
     assert len({ch.shape[-1] for ch in chunks}) == 1
     assert all(ch.ndim == 4 for ch in chunks)
     assert all(ch.shape[3] == 2 for ch in chunks)
-    combined_chunks = np.concatenate(chunks, 0)
-    combined_pop_indices = np.concatenate([ds.pop_indices for ds in data], 0)
-    assert len(combined_chunks) == len(combined_pop_indices)
-    return combined_chunks, pops, combined_pop_indices
+    combined_chunks = np.concatenate(chunks, 1)
+    pop_indices = data[0].pop_indices  # guaranteed to be the same by the checks above
+    assert len(combined_chunks) == len(pop_indices)
+    return combined_chunks, pops, pop_indices
 
 
 def init_afs(data: list[Contig]) -> dict[int, np.ndarray]:
@@ -476,9 +478,11 @@ def init_afs(data: list[Contig]) -> dict[int, np.ndarray]:
     for ds in data:
         if ds.afs is None:
             continue
+        assert ds.populations == data[0].populations
         for n, a in ds.afs.items():
             afss.setdefault(n, np.zeros_like(a))
             afss[n] += a
+    afss = {n: JSFS.from_dense(a, ds.populations) for n, a in afss.items()}
     return afss
 
 

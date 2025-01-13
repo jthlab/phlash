@@ -54,8 +54,6 @@ class MCMCParams:
     t_tr: jax.Array
     log_rho_over_theta: float
     theta: float = field(metadata=dict(static=True))
-    alpha: float = field(metadata=dict(static=True))
-    beta: float = field(metadata=dict(static=True))
     window_size: int = field(metadata=dict(static=True))
     N0: float = field(default=None, metadata=dict(static=True))
 
@@ -90,8 +88,6 @@ class MCMCParams:
         tM: float,
         theta: float,
         rho: float,
-        alpha: float = 0.0,
-        beta: float = 0.0,
         window_size: int = 100,
         N0: float = None,
     ) -> "MCMCParams":
@@ -102,8 +98,6 @@ class MCMCParams:
             t_tr=t_tr,
             log_rho_over_theta=jnp.log(rho / theta),
             theta=theta,
-            alpha=alpha,
-            beta=beta,
             window_size=window_size,
             N0=N0,
         )
@@ -135,6 +129,8 @@ class MCMCParams:
 
     @property
     def t(self):
-        t1, dtM = jnp.exp(self.t_tr)
+        t = jnp.exp(self.t_tr)
+        t1 = t[..., 0]
+        dtM = t[..., 1]
         tM = t1 + dtM
         return t1, tM

@@ -42,8 +42,6 @@ class PhlashMCMCParams(MCMCParams):
         tM: float,
         theta: float,
         rho: float,
-        alpha: float = 0.0,
-        beta: float = 0.0,
         window_size: int = 100,
         N0: float = None,
     ):
@@ -53,15 +51,13 @@ class PhlashMCMCParams(MCMCParams):
             tM=tM,
             theta=theta,
             rho=rho,
-            alpha=alpha,
-            beta=beta,
             window_size=window_size,
             N0=N0,
         )
         return cls(c_tr=softplus_inv(c), **asdict(mcp))
 
 
-def log_prior(mcp: MCMCParams) -> float:
+def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:
     ret = 0.0
     ret += sum(
         jax.scipy.stats.norm.logpdf(a, loc=mu, scale=sigma).sum()
@@ -69,9 +65,9 @@ def log_prior(mcp: MCMCParams) -> float:
             (mcp.log_rho_over_theta, 0.0, 1.0),
         ]
     )
-    ret -= mcp.alpha * jnp.sum(jnp.diff(mcp.log_c) ** 2)
+    ret -= alpha * jnp.sum(jnp.diff(mcp.c) ** 2)
     x, _ = jax.flatten_util.ravel_pytree(mcp)
-    ret -= mcp.beta * x.dot(x)
+    ret -= beta * x.dot(x)
     return ret
 
 
@@ -84,6 +80,8 @@ def log_density(
     afs: Int64[Array, "n"] = None,  # noqa: F821
     ld: dict[tuple[float, float], dict] = None,
     afs_transform: dict[int, Float[Array, "m n"]] = None,  # noqa: F722
+    alpha: float = 1.0,
+    beta: float = 1.0,
 ) -> float:
     r"""
     Computes the log density of a statistical model by combining the contributions from
@@ -108,7 +106,7 @@ def log_density(
     if warmup is not None:
         pi = phlash.hmm.psmc_ll(pp, warmup)[0].clip(0, 1)
     pp = pp._replace(pi=pi)
-    l1 = log_prior(mcp)
+    l1 = log_prior(mcp, alpha, beta)
     l2 = kern.loglik(pp, inds)
 
     # afs contribution, if present
