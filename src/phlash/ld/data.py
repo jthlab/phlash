@@ -117,7 +117,6 @@ def _helper(genotypes, genetic_pos, a, b) -> LdStats:
     assert i.size == j.size == k.size
     if not i.size:
         return
-    np.random.default_rng(1).shuffle(ijk)
     stats = _compute_stats(genotypes, ijk)
     d = dict(zip(["D2", "Dz", "pi2"], stats))
     return LdStats(**d)

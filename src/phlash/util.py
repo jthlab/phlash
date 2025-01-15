@@ -109,3 +109,21 @@ def plot_posterior(
     ax.set_xscale("log")
     ax.set_yscale("log")
     return t, m, jnp.array([q_lb, q_ub]) if credible_width is not None else None
+
+
+def rescale_demography(g: dict, N0: float) -> dict:
+    """Rescale the demography to have a specific N0."""
+    for d in g["demes"]:
+        d["start_time"] /= N0
+        for e in d["epochs"]:
+            e["start_size"] /= N0
+            e["end_size"] /= N0
+            # e["start_time"] /= N0
+            e["end_time"] /= N0
+    for p in g["pulses"]:
+        p["time"] /= N0
+    for m in g["migrations"]:
+        m["start_time"] /= N0
+        m["end_time"] /= N0
+        m["rate"] *= N0
+    return g

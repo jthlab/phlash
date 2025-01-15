@@ -154,7 +154,9 @@ def _from_iter(
         if genetic_map is not None:
             physical_pos.append(rec["pos"])
             genetic_pos.append(R(rec["pos"]))
-            genotypes.append(gts)
+            # important: copy the genotypes since the array might get reused. this
+            # happens in from_vcf
+            genotypes.append(gts.copy())
 
     ret = Contig(
         hets=hets, afs=afs, ld=None, window_size=w, populations=None, pop_indices=None
