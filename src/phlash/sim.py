@@ -170,12 +170,7 @@ def _simulate(
         logger.debug(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
-        try:
-            return _simulate_scrm(
-                model, chrom, pop_dict, pd["N0"], seed, return_vcf
-            )
-        except Exception as e:
-            logger.debug("Running scrm failed: {}", e)
+        return _simulate_scrm(model, chrom, pop_dict, pd["N0"], seed, return_vcf)
     return _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld)
 
 
@@ -250,7 +245,7 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
         bufsize=1,
         universal_newlines=True,
     ) as proc:
-        vcf = _parse_scrm(proc.stdout, chrom.id)
+        vcf, L = _parse_scrm(proc.stdout, chrom.id)
     if isinstance(return_vcf, str):
         with open(return_vcf, "w") as f:
             f.write(vcf)
@@ -260,15 +255,22 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
     fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
     with os.fdopen(fd, "wt") as f:
         f.write(vcf)
+    # index the vcf
+    subprocess.run(["bcftools", "view", vcf_path, "-o", vcf_path + ".bcf"], check=True)
+    subprocess.run(["bcftools", "index", vcf_path + ".bcf"], check=True)
     n = sum(samples) // 2
     samples = [f"sample{i}" for i in range(n)]
     # FIXME this will fail with empty Contig and interval
     return Contig.from_vcf(
-        vcf_path=vcf_path, sapmles=samples, contig=None, interval=None
-    ).to_raw(100)
+        vcf_path=vcf_path + ".bcf",
+        sample_ids=samples,
+        contig=chrom.id,
+        interval=(0, L),
+        genetic_map=chrom.recombination_map,
+    )
 
 
-def _parse_scrm(scrm_out, chrom_name) -> str:
+def _parse_scrm(scrm_out, chrom_name) -> tuple[str, int]:
     "Create a VCF from the scrm output, parse it, and return a raw contig"
     cmd_line = next(scrm_out).strip()
     L = int(re.search(r"-r [\d.]+ (\d+)", cmd_line)[1])
@@ -306,7 +308,7 @@ def _parse_scrm(scrm_out, chrom_name) -> str:
         gtz = zip(gts[::2], gts[1::2])
         cols += ["|".join(gt) for gt in gtz]
         print("\t".join(cols), file=vcf)
-    return vcf.getvalue()
+    return vcf.getvalue(), L
 
 
 def _find_stdpopsim_model(

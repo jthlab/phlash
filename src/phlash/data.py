@@ -30,7 +30,7 @@ class Contig(NamedTuple):
 
     Examples:
     >>> Contig.from_vcf(vcf_path="example.vcf.gz",
-                        samples=["sample1", "sample2"],
+                        sample_ids=["sample1", "sample2"],
                         region="chr1:1000-5000")
     >>> ts = tskit.load("example.trees")
     >>> Contig.from_ts(ts=ts, nodes=[(0, 1), (2, 3)])
