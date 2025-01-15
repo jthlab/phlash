@@ -105,8 +105,8 @@ class SizeHistory(NamedTuple):
         """
         R = 0.0
         c = []
-        for dt, p_i in zip(np.diff(t), p[:-1]):
-            c.append((-np.log1p(-p_i * np.exp(R))) / dt)
+        for dt, p_i in zip(jnp.diff(t), p):
+            c.append((-jnp.log1p(-p_i * jnp.exp(R))) / dt)
             R += c[-1] * dt
         # coalescent rate in last period is not identifiable from this data.
         c.append(c[-1])

@@ -13,7 +13,6 @@ import phlash.data
 import phlash.model
 from phlash.afs import default_afs_transform
 from phlash.kernel import get_kernel
-from phlash.ld.data import LdStats
 from phlash.model import PhlashMCMCParams
 from phlash.size_history import DemographicModel
 from phlash.util import Pattern, tree_unstack
@@ -107,6 +106,12 @@ class BaseFitter:
         self.afs = phlash.data.init_afs(self.data)
         self.ld = phlash.data.init_ld(self.data)
 
+        if self.test_data:
+            self.test_afs = phlash.data.init_afs([self.test_data])
+            self.test_ld = phlash.data.init_ld([self.test_data])
+        else:
+            self.test_afs = self.test_ld = None
+
     def setup_gpu_kernel(self):
         """
         Initialize the GPU kernel for computations.
@@ -126,10 +131,8 @@ class BaseFitter:
         max_samples = self.options.get("max_samples", 20)
         # add a chunk axis, not used here
         test_hets = self.test_data.hets[:max_samples, None]
-        test_afs = self.test_data.afs
-        test_ld = self.test_data.ld
-        if test_ld is not None:
-            test_ld = {k: LdStats.summarize(v) for k, v in test_ld.items() if v}
+        test_afs = self.test_afs
+        test_ld = self.test_ld
         N_test = test_hets.shape[0]
         self.test_kernel = get_kernel(
             M=self.M,
@@ -148,9 +151,6 @@ class BaseFitter:
                     warmup=None,
                     afs=test_afs,
                     ld=test_ld,
-                    afs_transform=self.afs_transform,
-                    alpha=self.options.get("alpha", 0.0),
-                    beta=self.options.get("beta", 0.0),
                 )
 
             return _elpd_ll(mcps).mean()
@@ -269,7 +269,6 @@ class BaseFitter:
             weights=weights,
             afs=self.afs,
             ld=self.ld,
-            afs_transform=self.afs_transform,
             alpha=self.options.get("alpha", 0.0),
             beta=self.options.get("beta", 0.0),
         )
@@ -332,8 +331,6 @@ class BaseFitter:
         Initialize the optimizer.
         """
         opt = optax.nadamw(learning_rate=self.options.get("learning_rate", 0.1))
-        # opt = optax.sgd(momentum=.1, nesterov=True,
-        # learning_rate=self.options.get("learning_rate", 1e-4))
         df = grad(self.log_density)
         self.svgd = blackjax.svgd(df, opt)
         self.state = self.svgd.init(self.particles)
@@ -352,8 +349,9 @@ class BaseFitter:
                 weights=kwargs["weights"],
                 inds=inds,
                 warmup=warmup,
+                ld=kwargs.get("ld"),
                 afs_transform=self.afs_transform,
-                afs=self.afs,
+                afs=kwargs.get("afs"),
                 kern=kwargs["kern"],
                 alpha=self.options.get("alpha", 0.0),
                 beta=self.options.get("beta", 0.0),
@@ -454,10 +452,19 @@ class PhlashFitter(BaseFitter):
             self.afs_transform = {
                 n: default_afs_transform(self.afs[n]) for n in self.afs
             }
+
         else:
             self.afs_transform = None
         self.chunks = self.chunks.reshape(-1, *self.chunks.shape[2:])[:, None]
         logger.debug("after merging: chunks.shape={}", self.chunks.shape)
+
+    def _optimization_step(self, inds, **kwargs):
+        """
+        Perform a single optimization step.
+        """
+        # Placeholder for actual optimization logic.
+        kwargs["afs_transform"] = self.afs_transform
+        return super()._optimization_step(inds, **kwargs)
 
 
 def fit(data, test_data=None, **options):
