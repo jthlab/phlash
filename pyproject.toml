@@ -35,6 +35,9 @@ dependencies = [
     "optimistix>=0.0.9",
     "osqp>=0.6.7post1",
     "lineax>=0.0.7",
+    "scikit-learn>=1.6.1",
+    "seaborn>=0.13.2",
+    "george>=0.4.3"
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -118,5 +121,8 @@ line-length = 88
 
 [dependency-groups]
 dev = [
+    "jupyter>=1.1.1",
+    "notebook<7",
     "pytest>=8.3.4",
+    "jupytext>=1.16.6",
 ]
