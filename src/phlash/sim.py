@@ -18,6 +18,7 @@ from loguru import logger
 
 import phlash.mp
 from phlash.data import Contig
+from phlash.memory import memory
 from phlash.size_history import DemographicModel, SizeHistory
 
 
@@ -133,6 +134,7 @@ def compute_truth(
     return SizeHistory(t=t, c=c)
 
 
+@memory.cache
 def _get_N0(dm: stdpopsim.DemographicModel, pop_dict: dict) -> float:
     "Compute N0 = ETMRCA / 2. for this demographic model."
     # this involves numerical integration and can be really slow, so it's cached.

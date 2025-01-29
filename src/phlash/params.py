@@ -48,14 +48,18 @@ class PSMCParams(NamedTuple):
         )
 
 
+def static_field(**kw):
+    return field(metadata=dict(static=True), **kw)
+
+
 @dataclass(kw_only=True)
 class MCMCParams:
-    pattern_str: str = field(metadata=dict(static=True))
+    pattern_str: str = static_field()
     t_tr: jax.Array
     log_rho_over_theta: float
-    theta: float = field(metadata=dict(static=True))
-    window_size: int = field(metadata=dict(static=True))
-    N0: float = field(default=None, metadata=dict(static=True))
+    theta: float = static_field()
+    window_size: int = static_field()
+    N0: float = static_field(default=None)
 
     def to_pp(self) -> PSMCParams:
         dm = self.to_dm()

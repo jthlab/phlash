@@ -1,15 +1,13 @@
 import numba
 import numpy as np
 
-
 # from fractions import Fraction
-@numba.jit
-def Fraction(p, q):
-    return p / q
 
 
-@numba.jit(nogil=True)
 def D(counts):
+    def Fraction(p, q):
+        return p / q
+
     n1 = counts[0]
     n2 = counts[1]
     n3 = counts[2]
@@ -45,10 +43,13 @@ def D(counts):
 
 
 Dhat = D
+nD = numba.jit(nogil=True, nopython=True)(D)
 
 
-@numba.jit(nogil=True)
 def D2(counts):
+    def Fraction(p, q):
+        return p / q
+
     n1 = counts[0]
     n2 = counts[1]
     n3 = counts[2]
@@ -169,8 +170,13 @@ def D2(counts):
     return 4.0 * (numer / denom)
 
 
-@numba.jit(nogil=True)
+nD2 = numba.jit(nogil=True, nopython=True)(D2)
+
+
 def Dz(counts):
+    def Fraction(p, q):
+        return p / q
+
     n1 = counts[0]
     n2 = counts[1]
     n3 = counts[2]
@@ -307,8 +313,13 @@ def Dz(counts):
     return 2.0 * (numer / denom)
 
 
-@numba.jit(nogil=True)
+nDz = numba.jit(nogil=True, nopython=True)(Dz)
+
+
 def pi2(counts):
+    def Fraction(p, q):
+        return p / q
+
     n1 = counts[0]
     n2 = counts[1]
     n3 = counts[2]
@@ -482,3 +493,6 @@ def pi2(counts):
     ) / 16.0
     denom = n * (n - 1) * (n - 2) * (n - 3)
     return numer / denom
+
+
+nPi2 = numba.jit(nogil=True, nopython=True)(pi2)
