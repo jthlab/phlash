@@ -1,10 +1,14 @@
 "Calculation of expected LD curves"
 
+import jax
 import jax.numpy as jnp
 from diffrax import Kvaerno3, ODETerm, PIDController, diffeqsolve
 
 from phlash.ld.data import LdStats
 from phlash.size_history import SizeHistory
+
+# this matters a lot for gradient accuracy
+jax.config.update("jax_enable_x64", True)
 
 
 def drift(c):
@@ -37,9 +41,14 @@ def f(t, y, args):
     D = mats["D"] * c
     R = mats["R"]
     U = mats["U"]
-    ld = (D + R) @ y["ld"] + U * y["h"]
-    h = -y["h"] * c + args["theta"]
-    ret = dict(ld=ld, h=h)
+    dld = (D + R) @ y["ld"] + U * y["h"]
+    dh = -y["h"] * c + args["theta"]
+    D2, Dz, pi2 = y["ld"]
+    dnorm = {
+        "D2/pi2": (pi2 * dld[0] - D2 * dld[2]) / pi2**2,
+        "Dz/pi2": (pi2 * dld[1] - Dz * dld[2]) / pi2**2,
+    }
+    ret = dict(ld=dld, h=dh, norm=dnorm)
     # jax.debug.print('t:{} c:{} y:{} ret:{}', t, c, y, ret)
     return ret
 
@@ -47,7 +56,11 @@ def f(t, y, args):
 def expected_ld(eta: SizeHistory, r: float, theta: float) -> LdStats:
     "expected LD statistics at recombination distance r"
     ld0 = stationary_ld(eta.c[-1], r, theta)
-    y0 = {"ld": ld0, "h": theta}
+    norm = {
+        "D2/pi2": ld0[0] / ld0[2],
+        "Dz/pi2": ld0[1] / ld0[2],
+    }
+    y0 = {"ld": ld0, "h": theta, "norm": norm}
 
     mats = {}
     mats["R"] = recomb(r)
@@ -59,18 +72,17 @@ def expected_ld(eta: SizeHistory, r: float, theta: float) -> LdStats:
     term = ODETerm(f)
     solver = Kvaerno3()
     stepsize_controller = PIDController(
-        rtol=1e-5, atol=1e-5, jump_ts=(eta.t[-1] - eta.t)[::-1]
+        rtol=1e-7, atol=1e-7, jump_ts=(eta.t[-1] - eta.t)[::-1]
     )
     sol = diffeqsolve(
         term,
         solver,
         t0=0,
         t1=eta.t[-1],
-        dt0=None,
+        dt0=1e-3,
         y0=y0,
         stepsize_controller=stepsize_controller,
         args=args,
     )
-    eld = sol.ys["ld"][0]
-    d = dict(zip(["D2", "Dz", "pi2"], eld))
-    return LdStats(**d)
+    e = sol.ys["norm"]
+    return e  # LdStats(**d)
