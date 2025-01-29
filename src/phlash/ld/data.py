@@ -1,6 +1,6 @@
 import itertools as it
+import os
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 from typing import NamedTuple
 
 import jax
@@ -26,7 +26,6 @@ class LdStats(NamedTuple):
     ) -> dict[str, jax.Array]:
         if isinstance(key, int):
             key = jax.random.PRNGKey(key)
-
         # convert to stacked pytree
         N = len(lds)
         lds = jax.tree.map(lambda *a: jnp.array(a), *lds)
@@ -39,7 +38,7 @@ class LdStats(NamedTuple):
 
 
 def calc_ld(
-    physical_pos, genetic_pos, genotypes, r_buckets, region_size
+    physical_pos, genetic_pos, genotypes, r_buckets, ld_region_size
 ) -> dict[tuple[float, float], list[LdStats]]:
     genotypes = np.asarray(genotypes)
     L, N, _ = genotypes.shape
@@ -55,26 +54,24 @@ def calc_ld(
     bi = genotypes.max(axis=(1, 2)) == 1
     genotypes = genotypes[bi]
     genetic_pos = genetic_pos[bi]
+    physical_pos = physical_pos[bi]
 
-    # shared_arrays = []
-    # for array, dtype in [(genotypes, np.int8), (genetic_pos, np.float32)]:
-    #     array = array[bi].astype(dtype)
-    #     shm = shared_memory.SharedMemory(create=True, size=array.nbytes)
-    #     np.ndarray(array.shape, dtype=array.dtype, buffer=shm.buf)[:] = array[:]
-    #     shared_arrays.append((shm.name, dtype, array.shape))
-
+    regions = np.arange(physical_pos[0], physical_pos[-1], ld_region_size).astype(int)
     # compute counts
     futs = {}
     ret = {}
-    regions = np.searchsorted(
-        physical_pos, np.arange(physical_pos.min(), physical_pos.max(), region_size)
-    )
-    with ThreadPoolExecutor() as pool:
+    try:
+        num_threads = int(os.environ.get("PHLASH_LD_NUM_THREADS"))
+    except (TypeError, ValueError):
+        num_threads = None
+    with ThreadPoolExecutor(num_threads) as pool:
         for a, b in it.pairwise(r_buckets):
             ret[(a, b)] = []
             for i, j in it.pairwise(regions):
-                assert i < j
-                f = pool.submit(_helper, genotypes[i:j], genetic_pos[i:j], a, b)
+                u, v = np.maximum(
+                    0, np.searchsorted(physical_pos, [i, j], side="right") - 1
+                )
+                f = pool.submit(_helper, genotypes, genetic_pos, a, b, u, v)
                 futs[f] = (a, b)
         for f in tqdm.tqdm(
             futs,
@@ -88,64 +85,30 @@ def calc_ld(
         return ret
 
 
-def _helper(genotypes, genetic_pos, a, b) -> LdStats:
-    # have to hold references to the shared memory objects for the whole function call
-    # shms = [
-    #     shared_memory.SharedMemory(name=shm_name) for shm_name, _, _ in shared_arrays
-    # ]
-    # genotypes, genetic_pos = (
-    #     np.ndarray(shape, dtype=dtype, buffer=shm.buf)
-    #     for (_, dtype, shape), shm in zip(shared_arrays, shms)
-    # )
-
-    @jax.jit
-    @partial(jax.vmap, in_axes=(0, None, None))
-    def annulus(i, a, b):
-        p = jnp.array(genetic_pos)[i]
-        u = p + a
-        v = p + b
-        uv = jnp.sort(jnp.array([u, v]))
-        ret = jnp.searchsorted(genetic_pos, uv)
-        return jnp.insert(ret, 0, i)
-
-    A = jnp.arange(len(genetic_pos))
-    ijk = np.asarray(annulus(A, a, b))
-    i, j, k = ijk.T
-    mask = j < k
-    ijk = ijk[mask]
-    i, j, k = ijk.T
-    assert i.size == j.size == k.size
-    if not i.size:
-        return
-    stats = _compute_stats(genotypes, ijk)
-    d = dict(zip(["D2", "Dz", "pi2"], stats))
+def _helper(genotypes, genetic_pos, a, b, u, v) -> LdStats:
+    # arrays can not be created or returned in nopython mode
+    ret = np.zeros(4)
+    counts = np.zeros(9)
+    _compute_stats(genotypes, genetic_pos, a, b, u, v, counts, ret)
+    d = dict(zip(["D2", "Dz", "pi2"], ret[:3]))
     return LdStats(**d)
 
 
-@numba.jit(nogil=True, nopython=True, cache=True)
-def _compute_stats(genotypes, ijk):
-    assert genotypes.shape[2] == 2
-    ret = np.zeros(3)
-    counts = np.zeros(9, dtype=numba.int16)
-    # inds = np.concatenate(
-    #     [
-    #         np.stack([np.full(kk - jj, ii), np.arange(jj, kk)], 1)
-    #         for ii, jj, kk in zip(i, j, k)
-    #     ]
-    # )
+@numba.jit(nogil=True, nopython=True)
+def _compute_stats(genotypes, genetic_pos, a, b, u, v, counts, ret):
     n = 0
-    for a in range(len(ijk)):
-        if n > 5_000_000:
-            break
-        i = ijk[a, 0]
-        j = ijk[a, 1]
-        k = ijk[a, 2]
+    i = u
+    while i < v:
         g_x = genotypes[i]
+        p_x = genetic_pos[i]
+        s_x = 3 * np.sum(g_x, 1)
         if np.any(g_x == -1):
             continue
-        s_x = 3 * np.sum(g_x, 1)
-        for y in range(j, k):
-            g_y = genotypes[y]
+        j = i
+        while j < v and genetic_pos[j] - p_x < a:
+            j += 1
+        while j < v and genetic_pos[j] - p_x < b:
+            g_y = genotypes[j]
             if np.any(g_y == -1):
                 continue
             r = s_x + np.sum(g_y, 1)
@@ -153,8 +116,15 @@ def _compute_stats(genotypes, ijk):
             for z in range(len(r)):
                 counts[r[z]] += 1
             # ret[0] += (phlash.ld.stats.Dhat(counts) - ret[0]) / (n + 1)
-            ret[0] += (phlash.ld.stats.D2(counts) - ret[0]) / (n + 1)
-            ret[1] += (phlash.ld.stats.Dz(counts) - ret[1]) / (n + 1)
-            ret[2] += (phlash.ld.stats.pi2(counts) - ret[2]) / (n + 1)
+            ret[0] += (phlash.ld.stats.nD2(counts) - ret[0]) / (n + 1)
+            ret[1] += (phlash.ld.stats.nDz(counts) - ret[1]) / (n + 1)
+            ret[2] += (phlash.ld.stats.nPi2(counts) - ret[2]) / (n + 1)
+            j += 1
             n += 1
-    return ret
+            if n > 1e7:
+                # cannot return inside loops
+                # instead force break
+                i = v
+                j = v
+        i += 1
+    ret[3] = n

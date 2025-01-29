@@ -28,6 +28,9 @@ def _check_jax_gpu():
         )
 
 
+_particles = None
+
+
 class BaseFitter:
     def __init__(self, data, test_data=None, **options):
         """
@@ -43,7 +46,6 @@ class BaseFitter:
         self.ld = None
         self.chunks = None
         self.kernel = None
-        self._particles = None  # for debugging
         self.initialize()
 
     def initialize(self):
@@ -151,9 +153,11 @@ class BaseFitter:
                     warmup=None,
                     afs=test_afs,
                     ld=test_ld,
+                    _components=True,
                 )
 
-            return _elpd_ll(mcps).mean()
+            e = _elpd_ll(mcps)
+            return e.mean(0)
 
         self.elpd = jit(elpd)
 
@@ -253,6 +257,7 @@ class BaseFitter:
         """
         Run the optimization loop.
         """
+        global _particles
         progress = self.options.get("progress", True)
 
         # begin iteration over data points
@@ -261,12 +266,13 @@ class BaseFitter:
         # weights to multiply terms in log density
         # to have unbiased gradient estimates, need to pre-multiply the chunk term by
         # ratio
-        weights = self.options.get(
-            "weights", np.array([1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0])
-        )
+        default_weights = (1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0)
+        weights = self.options.get("weights", (None,) * 4)
+        weights = [dw if w is None else w for dw, w in zip(default_weights, weights)]
+        logger.debug("weights: {}", weights)
         kw = dict(
             kern=self.train_kern,
-            weights=weights,
+            weights=jnp.array(weights),
             afs=self.afs,
             ld=self.ld,
             alpha=self.options.get("alpha", 0.0),
@@ -274,6 +280,7 @@ class BaseFitter:
         )
 
         logger.info("Starting optimization...")
+
         with tqdm.trange(
             self.niter, disable=not progress, desc="Fitting model"
         ) as self.pbar:
@@ -288,6 +295,7 @@ class BaseFitter:
                     break
 
                 self.callback(self.state)
+                _particles = self.state.particles
 
         logger.info("MCMC finished successfully")
         return tree_unstack(self._dms(self.state))
@@ -305,7 +313,8 @@ class BaseFitter:
             self.a = 0
 
         if i % 10 == 0:
-            e = self.elpd(self.state.particles)
+            es = np.asarray(self.elpd(self.state.particles))
+            e = es.sum()
             if self.ema is None:
                 self.ema = e
             else:
@@ -315,7 +324,7 @@ class BaseFitter:
                 self.best_elpd = (i, self.ema, self.state)
             else:
                 self.a += 1
-            self.pbar.set_description(f"elpd={self.ema:.2f} a={self.a}")
+            self.pbar.set_description(f"elpd={self.ema:.2f} a={self.a} e={es}")
             if i - self.best_elpd[0] > patience:
                 logger.info(
                     "The expected log-predictive density has not improved in "
@@ -355,10 +364,11 @@ class BaseFitter:
                 kern=kwargs["kern"],
                 alpha=self.options.get("alpha", 0.0),
                 beta=self.options.get("beta", 0.0),
+                _components=kwargs.get("_components"),
             )
 
         mcps = vmap(lambda _: particle)(kwargs["inds"])
-        return f(mcps, kwargs["inds"], kwargs["warmup"]).sum()
+        return f(mcps, kwargs["inds"], kwargs["warmup"]).sum(0)
 
     def _optimization_step(self, inds, **kwargs):
         """

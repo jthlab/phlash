@@ -82,6 +82,7 @@ def log_density(
     afs_transform: dict[int, Float[Array, "m n"]] = None,  # noqa: F722
     alpha: float = 1.0,
     beta: float = 1.0,
+    _components: bool = False,
 ) -> float:
     r"""
     Computes the log density of a statistical model by combining the contributions from
@@ -112,39 +113,53 @@ def log_density(
     # afs contribution, if present
     l3 = 0.0
     if afs is not None:
-        for n in afs:
-            assert len(n) == 1
-            T = afs_transform.get(n, lambda a: a)
-            etbl = dm.eta.etbl(n[0])
-            esfs = etbl / etbl.sum()
-            l3 += xlogy(T(afs[n][1:-1]), T(esfs)).sum()
+        l3 = _loglik_afs(dm, afs, afs_transform)
 
     # ld contribution, if present
     l4 = 0.0
-    if ld:
+    if ld is not None:
+        l4 = _loglik_ld(dm, mcp.N0, ld)
 
-        @vmap
-        def f(ab, d):
-            @vmap
-            def f(r):
-                # dmr = dm.rescale(dm.theta / 4 / mcp.N0)
-                return expected_ld(dm.eta, r * 4 * mcp.N0, dm.theta).norm()
+    lls = jnp.array([l1, l2, l3, l4])
 
-            # a, b = ab
-            # x = jnp.geomspace(a, b, 8)
-            # y = f(x)
-            expected = f(ab).mean(0)
-            # expected = vmap(jnp.trapezoid, (1, None))(y, x) / (b - a)
-            # jax.debug.print("obs:{} exp:{}", d["mu"], expected)
-            u = d["mu"] - expected
-            return -u @ jnp.linalg.solve(d["Sigma"], u)
+    if _components:
+        return lls
 
-        ab = jnp.array(list(ld.keys()))
-        d = jax.tree.map(lambda *a: jnp.array(a), *ld.values())
-        l4s = f(ab, d)
-        # jax.debug.print("l4s:{}", l4s)
-        l4 += l4s.sum()
-
-    ll = jnp.array([l1, l2, l3, l4])
-    ret = jnp.dot(weights, ll)
+    ret = jnp.dot(weights, lls)
     return jnp.where(jnp.isfinite(ret), ret, -jnp.inf)
+
+
+def _loglik_afs(dm, afs, afs_transform):
+    ll = 0.0
+    for n in afs:
+        assert len(n) == 1
+        T = afs_transform.get(n, lambda a: a)
+        etbl = dm.eta.etbl(n[0])
+        esfs = etbl / etbl.sum()
+        ll += xlogy(T(afs[n][1:-1]), T(esfs)).mean()
+    return ll
+
+
+def _loglik_ld(dm, N0, ld):
+    @vmap
+    def f(ab, d):
+        @vmap
+        def f(r):
+            # dmr = dm.rescale(dm.theta / 4 / mcp.N0)
+            return expected_ld(dm.eta, r * 4 * N0, dm.theta).norm()
+
+        # a, b = ab
+        # x = jnp.geomspace(a, b, 8)
+        # y = f(x)
+        expected = f(ab).mean(0)
+        # inflate the diagonal to prevent singularities. equivalent to saying there's
+        # measurement error in the expected ld estimates, which is sort of true.
+        u = d["mu"]
+        S = 1e-8 * jnp.eye(len(u)) + d["Sigma"]
+        return jax.scipy.stats.multivariate_normal.logpdf(u, mean=expected, cov=S)
+
+    ab = jnp.array(list(ld.keys()))
+    d = jax.tree.map(lambda *a: jnp.array(a), *ld.values())
+    lls = f(ab, d)
+    # jax.debug.print("l4s:{}", l4s)
+    return lls.sum()

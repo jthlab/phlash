@@ -17,8 +17,7 @@ from loguru import logger
 from momi3.jsfs import JSFS
 from scipy.interpolate import PPoly
 
-from phlash.ld import calc_ld
-from phlash.ld.data import LdStats
+from phlash.ld.data import LdStats, calc_ld
 
 
 class Contig(NamedTuple):
@@ -40,8 +39,8 @@ class Contig(NamedTuple):
     afs: Int[Array, "n"]  # noqa: F821
     ld: dict[tuple[float, float], float]
     window_size: int
-    pop_indices: Int8[Array, "N 2"]
-    populations: tuple[str]
+    pop_indices: Int8[Array, "N 2"] = None
+    populations: tuple[str] = None
 
     @property
     def L(self):
@@ -66,6 +65,37 @@ class Contig(NamedTuple):
             populations=(0,),
         )
 
+    @classmethod
+    def concat(cls, *contigs):
+        """Concatenate contigs"""
+        if not all(c.populations == contigs[0].populations for c in contigs):
+            raise ValueError("All contigs must be defined on the same populations")
+        if not all(np.all(c.pop_indices == contigs[0].pop_indices) for c in contigs):
+            raise ValueError("All contigs must have the same population indices")
+        assert all(c.window_size == contigs[0].window_size for c in contigs)
+        for i in (0, 2, 3):
+            assert all(c.hets.shape[i] == contigs[0].hets.shape[i] for c in contigs)
+        hets = np.concatenate([c.hets for c in contigs], axis=1)
+        # sum afss
+        afss = {}
+        for c in contigs:
+            for n, a in c.afs.items():
+                afss.setdefault(n, np.zeros_like(a))
+                afss[n] += a
+        # merge lds
+        lds = {}
+        for c in contigs:
+            for k, v in c.ld.items():
+                lds.setdefault(k, []).extend(v)
+        return cls(
+            hets=hets,
+            afs=afss,
+            ld=lds,
+            window_size=contigs[0].window_size,
+            pop_indices=contigs[0].pop_indices,
+            populations=contigs[0].populations,
+        )
+
 
 def _from_iter(
     rec_iter: Iterable[dict],
@@ -75,7 +105,7 @@ def _from_iter(
     window_size: int = 100,
     genetic_map: msprime.RateMap = None,
     ld_buckets: np.ndarray = None,
-    ld_region_size: int = 1_000_000,
+    ld_region_size: int = None,
     mask: list[tuple[int, int]] = None,
 ) -> Contig:
     """Construct a contig from an iterator of records.
@@ -164,7 +194,11 @@ def _from_iter(
 
     if genetic_map is not None:
         if ld_buckets is None:
-            ld_buckets = np.geomspace(1e-6, 1e-2, 12)
+            ld_buckets = np.geomspace(1e-3, 0.05, 32)
+        if ld_region_size is None:
+            # compute the average recombination probability per base pair
+            rho = R(end) / end
+            ld_region_size = 2 * ld_buckets[-1] * int(1 / rho)
         ld = calc_ld(
             np.array(physical_pos),
             np.array(genetic_pos),
@@ -319,7 +353,7 @@ def _from_vcf(
                 for j in range(2):
                     s = sids[j]
                     nmiss = gts[i][j] >= 0
-                    d[sample_pops[s]] += gts[i][j] * nmiss
+                    d[sample_pops[s]] += int(gts[i][j] * nmiss)
                     n[sample_pops[s]] += nmiss
             if (gts <= 1).all():
                 # ignore multi-allelic sites
