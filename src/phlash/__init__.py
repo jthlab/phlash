@@ -28,12 +28,13 @@ jax.config.update(
 import sys
 
 from phlash.data import Contig
-from phlash.fit.base import fit
+
+# from phlash.fit.base import fit
 from phlash.psmc import psmc
 from phlash.size_history import DemographicModel, SizeHistory
 from phlash.util import plot_posterior
 
-__all__ = ["fit", "Contig", "psmc", "DemographicModel", "SizeHistory", "plot_posterior"]
+__all__ = ["Contig", "psmc", "DemographicModel", "SizeHistory", "plot_posterior"]
 
 if sys.version_info[:2] >= (3, 8):
     # TODO: Import directly (no need for conditional) when `python_requires = >= 3.8`

@@ -27,10 +27,8 @@ class LdStats(NamedTuple):
         if isinstance(key, int):
             key = jax.random.PRNGKey(key)
         # convert to stacked pytree
+        lds = jnp.array(lds)
         N = len(lds)
-        lds = jax.tree.map(lambda *a: jnp.array(a), *lds)
-        # normalize
-        lds = jax.vmap(cls.norm)(lds)
         reps = jax.random.choice(key, lds, shape=(B, N), replace=True)
         assert reps.shape == (B, N, 2)  # Dz / pi2, D2 / pi2
         Sigma_boot = jnp.cov(reps.mean(1), rowvar=False)
@@ -81,7 +79,7 @@ def calc_ld(
             ld = f.result()
             if ld is not None:
                 k = futs[f]
-                ret.setdefault(k, []).append(ld)
+                ret.setdefault(k, []).append(ld.norm())
         return ret
 
 

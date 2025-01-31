@@ -45,7 +45,6 @@ class BaseFitter:
         self.afs = None
         self.ld = None
         self.chunks = None
-        self.kernel = None
         self.initialize()
 
     def initialize(self):
@@ -142,16 +141,17 @@ class BaseFitter:
             double_precision=False,
         )
 
-        def elpd(mcps):
+        def elpd(mcps, weights):
             @vmap
             def _elpd_ll(mcp):
                 return self.log_density(
                     mcp,
-                    weights=jnp.array([0.0, 1.0, 1.0, 1.0]),
+                    weights=weights,
                     inds=(jnp.arange(N_test), jnp.full(N_test, 0)),
                     kern=self.test_kernel,
                     warmup=None,
                     afs=test_afs,
+                    afs_transform=self.test_afs_transform,
                     ld=test_ld,
                     _components=True,
                 )
@@ -266,20 +266,35 @@ class BaseFitter:
         # weights to multiply terms in log density
         # to have unbiased gradient estimates, need to pre-multiply the chunk term by
         # ratio
-        default_weights = (1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0)
         weights = self.options.get("weights", (None,) * 4)
-        weights = [dw if w is None else w for dw, w in zip(default_weights, weights)]
+        default_weights = (1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0)
+        weights = self.weights = jnp.array(
+            [dw if w is None else w for dw, w in zip(default_weights, weights)]
+        )
         logger.debug("weights: {}", weights)
+
         kw = dict(
             kern=self.train_kern,
-            weights=jnp.array(weights),
-            afs=self.afs,
-            ld=self.ld,
+            weights=weights,
             alpha=self.options.get("alpha", 0.0),
             beta=self.options.get("beta", 0.0),
         )
 
         logger.info("Starting optimization...")
+
+        # with tqdm.trange(
+        #     100, disable=not progress, desc="Pre-fitting"
+        # ) as self.pbar:
+        #     for i in self.pbar:
+        #         self.state = jax.tree.map(
+        #             lambda a: jnp.astype(a, jnp.float64), self.state
+        #         )
+        #         self.state = self._optimization_step(next(di), **kw)
+        #         self.callback(self.state)
+        #         _particles = self.state.particles
+
+        kw["afs"] = self.afs
+        kw["ld"] = self.ld
 
         with tqdm.trange(
             self.niter, disable=not progress, desc="Fitting model"
@@ -291,11 +306,15 @@ class BaseFitter:
                     lambda a: jnp.astype(a, jnp.float64), self.state
                 )
                 self.state = self._optimization_step(next(di), **kw)
+                if i == 100:
+                    global _debug
+                    _debug = True
+
                 if self.converged(i):
                     break
 
                 self.callback(self.state)
-                _particles = self.state.particles
+                self.particles = _particles = self.state.particles
 
         logger.info("MCMC finished successfully")
         return tree_unstack(self._dms(self.state))
@@ -313,7 +332,8 @@ class BaseFitter:
             self.a = 0
 
         if i % 10 == 0:
-            es = np.asarray(self.elpd(self.state.particles))
+            w = self.weights.at[0].set(0.0).at[1].set(1.0)
+            es = np.asarray(self.elpd(self.state.particles, w))
             e = es.sum()
             if self.ema is None:
                 self.ema = e
@@ -339,7 +359,13 @@ class BaseFitter:
         """
         Initialize the optimizer.
         """
-        opt = optax.nadamw(learning_rate=self.options.get("learning_rate", 0.1))
+        lr = self.options.get(
+            "learning_rate",
+            .01,
+            # optax.cosine_decay_schedule(.1, .75 * self.niter, 1e-3)
+        )
+        opt = optax.nadam(learning_rate=lr)
+        # df = jit(grad(self.log_density), static_argnames=["kern"])
         df = grad(self.log_density)
         self.svgd = blackjax.svgd(df, opt)
         self.state = self.svgd.init(self.particles)
@@ -387,10 +413,7 @@ class BaseFitter:
         ch0 = self.chunks[:, :, overlap:]
         w = ch0.sum(axis=(0, 1, 2))
         # this is fairly wrong if compositing many chunks together.
-        N = self.chunks.shape[0]
-        i = np.arange(1, 2 * N)
-        H_n = (1 / i).sum()
-        return w[1] / w[0] / H_n
+        return w[1] / w[0]
 
     ## some useful properties
     @property
@@ -458,13 +481,23 @@ class PhlashFitter(BaseFitter):
         super().load_data()
         # convert afs to standard vector representation in the 1-pop case
         if self.afs:
-            self.afs = {k: v.todense() for k, v in self.afs.items()}
+            self.afs = {k: v.todense()[1:-1] for k, v in self.afs.items()}
             self.afs_transform = {
                 n: default_afs_transform(self.afs[n]) for n in self.afs
             }
-
+            for n in self.afs:
+                logger.debug(
+                    "transformed afs[{}]:{}", n, self.afs_transform[n] @ self.afs[n]
+                )
         else:
             self.afs_transform = None
+        if self.test_afs:
+            self.test_afs = {k: v.todense()[1:-1] for k, v in self.test_afs.items()}
+            self.test_afs_transform = {
+                n: default_afs_transform(self.test_afs[n]) for n in self.test_afs
+            }
+        else:
+            self.test_afs_transform = None
         self.chunks = self.chunks.reshape(-1, *self.chunks.shape[2:])[:, None]
         logger.debug("after merging: chunks.shape={}", self.chunks.shape)
 
@@ -477,5 +510,11 @@ class PhlashFitter(BaseFitter):
         return super()._optimization_step(inds, **kwargs)
 
 
+# for post-mortem/debugging...
+_fitter = None
+
+
 def fit(data, test_data=None, **options):
-    return PhlashFitter(data, test_data, **options).fit()
+    global _fitter
+    _fitter = PhlashFitter(data, test_data, **options)
+    return _fitter.fit()

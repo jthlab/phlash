@@ -36,7 +36,7 @@ def project_transform(n, m) -> np.ndarray:
     return scipy.stats.hypergeom.pmf(M=n, N=m, n=j, k=i)
 
 
-def bws_transform(afs, alpha: float = 0.1) -> np.ndarray:
+def bws_transform(afs, alpha: float = 0.2) -> np.ndarray:
     # Bhaskar-Wang-Song transform:
     n = len(afs) + 1
     p = np.cumsum(afs) / np.sum(afs)
@@ -52,6 +52,7 @@ def default_afs_transform(afs: np.ndarray) -> np.ndarray:
     if afs.ndim > 1:
         return IdentityAfsTransform()
 
-    T1 = fold_transform(afs.shape[0] - 1)
-    T2 = bws_transform(T1 @ afs[1:-1])
+    T1 = fold_transform(len(afs) + 1)
+    assert (T1 @ afs).sum() == afs.sum()
+    T2 = bws_transform(T1 @ afs)
     return LinearAfsTransform(T2 @ T1)
