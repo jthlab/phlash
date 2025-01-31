@@ -9,7 +9,6 @@ from jaxtyping import Array, Float, Float64, Int8, Int64
 import phlash.hmm
 from phlash.ld.expected import expected_ld
 from phlash.params import MCMCParams
-from phlash.util import softplus_inv
 
 
 @jax.tree_util.register_dataclass
@@ -19,7 +18,8 @@ class PhlashMCMCParams(MCMCParams):
 
     @property
     def c(self):
-        return jax.nn.softplus(self.c_tr)
+        # return jax.nn.softplus(self.c_tr)
+        return jnp.exp(self.c_tr)
 
     @property
     def log_c(self):
@@ -54,7 +54,7 @@ class PhlashMCMCParams(MCMCParams):
             window_size=window_size,
             N0=N0,
         )
-        return cls(c_tr=softplus_inv(c), **asdict(mcp))
+        return cls(c_tr=jnp.log(c), **asdict(mcp))
 
 
 def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:
@@ -65,7 +65,7 @@ def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:
             (mcp.log_rho_over_theta, 0.0, 1.0),
         ]
     )
-    ret -= alpha * jnp.sum(jnp.diff(mcp.c) ** 2)
+    ret -= alpha * jnp.sum(jnp.diff(mcp.c_tr) ** 2)
     x, _ = jax.flatten_util.ravel_pytree(mcp)
     ret -= beta * x.dot(x)
     return ret
@@ -136,7 +136,7 @@ def _loglik_afs(dm, afs, afs_transform):
         T = afs_transform.get(n, lambda a: a)
         etbl = dm.eta.etbl(n[0])
         esfs = etbl / etbl.sum()
-        ll += xlogy(T(afs[n][1:-1]), T(esfs)).mean()
+        ll += xlogy(T(afs[n]), T(esfs)).mean()
     return ll
 
 
@@ -145,18 +145,19 @@ def _loglik_ld(dm, N0, ld):
     def f(ab, d):
         @vmap
         def f(r):
-            # dmr = dm.rescale(dm.theta / 4 / mcp.N0)
-            return expected_ld(dm.eta, r * 4 * N0, dm.theta).norm()
+            dmr = dm.rescale(dm.theta / 4 / N0)
+            e = expected_ld(dmr.eta, 2 * r, 2 * dmr.theta)
+            return jnp.array([e["D2/pi2"], e["Dz/pi2"]])
 
         # a, b = ab
         # x = jnp.geomspace(a, b, 8)
         # y = f(x)
+        # expected = vmap(jnp.trapezoid, (1, None))(y, x) / (b - a)
         expected = f(ab).mean(0)
-        # inflate the diagonal to prevent singularities. equivalent to saying there's
-        # measurement error in the expected ld estimates, which is sort of true.
-        u = d["mu"]
-        S = 1e-8 * jnp.eye(len(u)) + d["Sigma"]
-        return jax.scipy.stats.multivariate_normal.logpdf(u, mean=expected, cov=S)
+        # jax.debug.print("obs:{} exp:{}", d["mu"], expected)
+        u = d["mu"] - expected
+        S = 1e-6 * jnp.eye(len(expected)) + d["Sigma"]
+        return -u @ jnp.linalg.solve(S, u)
 
     ab = jnp.array(list(ld.keys()))
     d = jax.tree.map(lambda *a: jnp.array(a), *ld.values())

@@ -246,6 +246,16 @@ class SizeHistory(NamedTuple):
         R2 = eta2.R
         return _tv(R1, R2)
 
+    def hellinger(self, other: "SizeHistory") -> float:
+        "Hellinger distance between coalescent densities"
+        # place the two densities on the same set of breakpoints
+        t = jnp.sort(jnp.concatenate([self.t, other.t]))
+        eta1 = SizeHistory(t=t, c=self(t))
+        eta2 = SizeHistory(t=t, c=other(t))
+        R1 = eta1.R
+        R2 = eta2.R
+        return _hellinger(R1, R2)
+
     def l2(self, other: "SizeHistory", t_max) -> float:
         "L2 distance between N_self(t) and N_other(t) up to time t_max."
         t = np.array([sorted(set(self.t.tolist()) | set(other.t.tolist()) | {t_max})])
@@ -305,6 +315,23 @@ def _tv_helper(ab1, ab2, T):
     i1 = I(a1, b1, t_star)
     i2 = I(a2, b2, t_star)
     return abs(i1 - i2) + abs((I(a1, b1, T) - i1) - (I(a2, b2, T) - i2))
+
+
+def _hellinger(R1, R2):
+    return 1.0 - vmap(_hellinger_helper, (1, 1, 0))(R1.c, R2.c, jnp.diff(R1.x)).sum()
+
+
+def _hellinger_helper(ab1, ab2, T):
+    "int_0^T sqrt(a1 exp(-(a1*t + b1)) * a2 exp(-(a2*t + b2))) dt"
+    a1, b1 = ab1
+    a2, b2 = ab2
+    # = sqrt(a1 * a2) * int_0^T exp(-0.5 * (a1 + a2) * t - 0.5 * (b1 + b2)) dt
+    # = sqrt(a1 * a2) * exp(-0.5 * (b1 + b2)) * (1 - exp(-0.5 * (a1 + a2) * T))
+    #   / (0.5 * (a1 + a2))
+    T_safe = jnp.where(jnp.isinf(T), 1.0, T)
+    r1 = jnp.sqrt(a1 * a2) * jnp.exp(-0.5 * (b1 + b2)) / (0.5 * (a1 + a2))
+    r2 = jnp.where(jnp.isinf(T), 1.0, -jnp.expm1(-0.5 * (a1 + a2) * T_safe))
+    return r1 * r2
 
 
 def _psmc_size_history(pattern, alpha, t_max) -> SizeHistory:

@@ -194,7 +194,7 @@ def _from_iter(
 
     if genetic_map is not None:
         if ld_buckets is None:
-            ld_buckets = np.geomspace(1e-3, 0.05, 32)
+            ld_buckets = np.geomspace(1e-6, 5e-3, 16)
         if ld_region_size is None:
             # compute the average recombination probability per base pair
             rho = R(end) / end
@@ -519,7 +519,8 @@ def init_afs(data: list[Contig]) -> dict[int, np.ndarray]:
             afss.setdefault(n, np.zeros_like(a))
             afss[n] += a
     afss = {n: JSFS.from_dense(a, ds.populations) for n, a in afss.items()}
-    return afss
+    # empty dict -> None
+    return afss or None
 
 
 def init_ld(data: list[Contig]) -> dict[tuple[float, float], np.ndarray]:
@@ -532,4 +533,4 @@ def init_ld(data: list[Contig]) -> dict[tuple[float, float], np.ndarray]:
     if lds:
         # convert list-of-pytrees to pytree of arrays
         lds = {k: LdStats.summarize(v) for k, v in lds.items() if v}  # v could be empty
-    return lds
+    return lds or None
