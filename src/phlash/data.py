@@ -487,7 +487,8 @@ def init_chunks(
     pops = data[0].populations
     if all(ds.L is None for ds in data):
         raise ValueError("None of the contigs have a length")
-    chunk_size = int(min(0.2 * ds.L / ds.window_size for ds in data if ds.L))
+    if chunk_size is None:
+        chunk_size = int(min(0.05 * ds.L / ds.window_size for ds in data if ds.L))
     if chunk_size < 10 * overlap:
         logger.warning(
             "The chunk size is {}, which is less than 10 times the overlap ({}).",
