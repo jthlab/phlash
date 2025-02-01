@@ -96,6 +96,8 @@ def plot_posterior(
         ax = plt.gca()
     dms = tree_stack(dms)
     t1, tM = jnp.quantile(dms.eta.t[:, 1:], jnp.array([0.025, 0.975]))
+    t1 = kwargs.pop("t1", t1)
+    tM = kwargs.pop("tM", tM)
     t = jnp.geomspace(t1, tM, 1000)
     Ne = jax.vmap(phlash.size_history.SizeHistory.__call__, (0, None, None))(
         dms.eta, t, True

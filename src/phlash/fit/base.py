@@ -78,7 +78,7 @@ class BaseFitter:
         logger.info("Loading data...")
         overlap = self.options.get("overlap", 500)
         # the size of each "chunk", see manuscript. this is estimated from data.
-        chunk_size = self.options.get("chunk_size")
+        chunk_size = self.options.get("chunk_size", 50_000)
         max_samples = self.options.get("max_samples", 20)
         num_workers = self.options.get("num_workers")
         (self.chunks, self.populations, self.pop_indices) = phlash.data.init_chunks(
@@ -90,6 +90,7 @@ class BaseFitter:
 
         # avoid storing a huge array on gpu if we're only going to use a small part of
         # it in expectation, we will sample S * niter rows of the data.
+        logger.debug("minibatch size: {}", self.minibatch_size)
         if self.num_chunks > 5 * self.minibatch_size * self.niter:
             # important: use numpy to do this _not_ jax. (jax will put it on the gpu
             # which causes the very problem we are trying to solve.)
@@ -310,7 +311,9 @@ class BaseFitter:
                     global _debug
                     _debug = True
 
-                if self.converged(i):
+                conv = self.converged(i)
+                if conv is not False:
+                    self.state = conv[2]
                     break
 
                 self.callback(self.state)
@@ -350,7 +353,7 @@ class BaseFitter:
                     "The expected log-predictive density has not improved in "
                     f"the last {patience} iterations; exiting."
                 )
-                return True
+                return self.best_elpd
 
         # catch-all return if not converged or not checked
         return False
@@ -361,7 +364,7 @@ class BaseFitter:
         """
         lr = self.options.get(
             "learning_rate",
-            .01,
+            0.01,
             # optax.cosine_decay_schedule(.1, .75 * self.niter, 1e-3)
         )
         opt = optax.nadam(learning_rate=lr)
