@@ -102,13 +102,17 @@ def log_density(
         The log density, or negative infinity where the result is not finite.
     """
     dm = mcp.to_dm()
-    pp = mcp.to_pp()
-    pi = pp.pi
-    if warmup is not None:
-        pi = phlash.hmm.psmc_ll(pp, warmup)[0].clip(0, 1)
-    pp = pp._replace(pi=pi)
     l1 = log_prior(mcp, alpha, beta)
-    l2 = kern.loglik(pp, inds)
+
+    # sequence contribution, if present
+    l2 = 0.0
+    if inds is not None:
+        pp = mcp.to_pp()
+        pi = pp.pi
+        if warmup is not None:
+            pi = phlash.hmm.psmc_ll(pp, warmup)[0].clip(0, 1)
+        pp = pp._replace(pi=pi)
+        l2 = kern.loglik(pp, inds)
 
     # afs contribution, if present
     l3 = 0.0
@@ -136,7 +140,7 @@ def _loglik_afs(dm, afs, afs_transform):
         T = afs_transform.get(n, lambda a: a)
         etbl = dm.eta.etbl(n[0])
         esfs = etbl / etbl.sum()
-        ll += xlogy(T(afs[n]), T(esfs)).mean()
+        ll += xlogy(T(afs[n]), T(esfs)).sum()
     return ll
 
 
