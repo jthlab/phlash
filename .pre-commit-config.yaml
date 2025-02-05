@@ -22,9 +22,10 @@ repos:
   hooks:
     # Run the linter.
     - id: ruff
-      args: [ --fix ]
+      args: [ --fix, --show-fixes ]
     # Run the formatter.
     - id: ruff-format
+      args: [ --diff ]
 
 ## If you want to automatically "modernize" your Python code:
 - repo: https://github.com/asottile/pyupgrade

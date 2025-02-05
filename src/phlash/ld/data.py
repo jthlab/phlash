@@ -28,6 +28,8 @@ class LdStats(NamedTuple):
             key = jax.random.PRNGKey(key)
         # convert to stacked pytree
         lds = jnp.array(lds)
+        nan = jnp.isnan(lds).any(axis=1)
+        lds = lds[~nan]
         N = len(lds)
         reps = jax.random.choice(key, lds, shape=(B, N), replace=True)
         assert reps.shape == (B, N, 2)  # Dz / pi2, D2 / pi2

@@ -65,7 +65,7 @@ def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:
             (mcp.log_rho_over_theta, 0.0, 1.0),
         ]
     )
-    ret -= alpha * jnp.sum(jnp.diff(mcp.c_tr) ** 2)
+    ret -= alpha * jnp.sum(abs(jnp.diff(mcp.c_tr)))
     x, _ = jax.flatten_util.ravel_pytree(mcp)
     ret -= beta * x.dot(x)
     return ret
