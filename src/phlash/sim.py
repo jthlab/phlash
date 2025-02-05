@@ -139,6 +139,13 @@ def _get_N0(dm: stdpopsim.DemographicModel, pop_dict: dict) -> float:
     "Compute N0 = ETMRCA / 2. for this demographic model."
     # this involves numerical integration and can be really slow, so it's cached.
     # pop_dict = {pop: # of diploids}, but this function wants {pop: # of ploids}.
+    dm_pops = {p.name for p in dm.populations}
+    for pop in pop_dict:
+        if pop not in dm_pops:
+            raise ValueError(
+                f"Population '{pop}' not in model populations. "
+                f"Valid choices are: {dm_pops}"
+            )
     logger.debug("Computing N0 for dm={} pops={}", dm.id, pop_dict)
     return dm.model.debug().mean_coalescence_time(pop_dict, max_iter=20, rtol=0.01) / 2
 

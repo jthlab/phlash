@@ -1,3 +1,6 @@
+import functools
+from dataclasses import replace
+
 import blackjax
 import jax
 import numpy as np
@@ -42,6 +45,7 @@ class BaseFitter:
         self.M = options.get("M", 16)
         self.key = options.get("key", jax.random.PRNGKey(1))
         self.state = None
+        self.init = None
         self.afs = None
         self.ld = None
         self.chunks = None
@@ -54,9 +58,6 @@ class BaseFitter:
         _check_jax_gpu()
         self.load_data()
         self.setup_gpu_kernel()
-        self.initialize_particles()
-        self.initialize_callback()  # for plotting
-        self.initialize_optimizer()
 
     def get_key(self):
         """
@@ -91,20 +92,7 @@ class BaseFitter:
         # avoid storing a huge array on gpu if we're only going to use a small part of
         # it in expectation, we will sample S * niter rows of the data.
         logger.debug("minibatch size: {}", self.minibatch_size)
-        if self.num_chunks > 5 * self.minibatch_size * self.niter:
-            # important: use numpy to do this _not_ jax. (jax will put it on the gpu
-            # which causes the very problem we are trying to solve.)
-            old_size = self.chunks.size
-            rng = np.random.default_rng(np.asarray(self.get_key()))
-            self.chunks = rng.choice(
-                self.chunks, size=(5 * self.minibatch_size * self.niter,), replace=False
-            )
-            gb = 1024**3
-            logger.debug(
-                "Downsampled chunks from {:.2f}Gb to {:.2f}Gb",
-                old_size / gb,
-                self.chunks.size / gb,
-            )
+
         self.afs = phlash.data.init_afs(self.data)
         self.ld = phlash.data.init_ld(self.data)
 
@@ -166,13 +154,16 @@ class BaseFitter:
         """
         Initialize the MCMC model parameters and optimizer.
         """
+        if self.init is not None:
+            return self.init
         init = self.options.get("init")
-        theta = self.options.get("theta", self._calculate_watterson())
+        theta = self.theta
         # although we could work in the per-generation scaling if 'mutation_rate' is
         # passed, it seems to be numerically better (estimates are more accurate) to
         # work in the coalescent scaling. perhaps because all the calculations are
         # "O(1)" instead of "O(huge number) * O(tiny number)" ...
         logger.info("Scaled mutation rate Θ={:.4g}", theta)
+        logger.info("Initializing model")
         if init is None:
             N0 = None
             # If there are n samples coalescing at rate c then the rate of first
@@ -182,14 +173,14 @@ class BaseFitter:
             if self.mutation_rate is not None:
                 N0 = theta / 4 / self.mutation_rate
                 logger.debug("N0={}", N0)
-            t1 = self.options.get("t1", -jnp.log1p(-1.0 / 16) / self.num_samples)
+            t1 = self.options.get("t1", -jnp.log1p(-1.0 / 16) / (2 * self.num_samples))
             tM = self.options.get("tM", 15.0)
             assert t1 < tM
             logger.debug("t1={:g} tM={:f}", t1, tM)
             rho = self.options.get("rho_over_theta", 1.0) * theta
             # this pattern is similar to the psmc default, but we have fewer params
             # (16) to use, so are a little more conservative with parameter tying
-            pat = "14*1+1*2"
+            pat = "16*1"
             init = PhlashMCMCParams.from_linear(
                 pattern_str=pat,
                 rho=rho,
@@ -201,22 +192,39 @@ class BaseFitter:
                 window_size=self.window_size,
             )
         assert isinstance(init, PhlashMCMCParams)
+        self.init = init
         return init
 
     def initialize_particles(self):
         # initialized raveled representation of state
-        init = self._initialize_model()
-        x0, unravel = ravel_pytree(init)
-        prior_mu = x0
-        prior_prec = self.options.get("sigma", 0.5)
-        self.particles = vmap(unravel)(
-            prior_mu
-            + prior_prec
-            * jax.random.normal(
-                self.get_key(),
-                shape=(self.options.get("num_particles", 500), len(prior_mu)),
+        init0 = self._initialize_model()
+
+        def f(key):
+            fl = functools.partial(
+                PhlashMCMCParams.from_linear,
+                pattern_str="16*1",
+                rho=init0.rho,
+                t1=init0.t1,
+                tM=init0.tM,
+                theta=init0.theta,
+                N0=init0.N0,
+                window_size=self.window_size,
             )
-        )
+            init = fl(c=jnp.ones(16))
+            x0, unravel = ravel_pytree(init)
+            sd = self.options.get("sigma", 0.5)
+            key1, key2 = jax.random.split(key)
+            x1 = x0 + sd * jax.random.normal(key1)
+            init = unravel(x1)
+            t = init.times
+            t = jnp.append(t, 2 * t[-1])
+            ta = (t[:-1] + t[1:]) / 2.0
+            c = init0.to_dm().eta(ta)
+            c_tr = jnp.log(c) + sd * jax.random.normal(key2, c.shape)
+            return replace(init, c_tr=c_tr)
+
+        keys = jax.random.split(self.get_key(), self.options.get("num_particles", 500))
+        self.particles = jax.vmap(f)(keys)
 
     def data_iterator(self):
         """
@@ -259,6 +267,9 @@ class BaseFitter:
         Run the optimization loop.
         """
         global _particles
+        self.initialize_particles()
+        self.initialize_optimizer()
+        self.initialize_callback()
         progress = self.options.get("progress", True)
 
         # begin iteration over data points
@@ -297,6 +308,8 @@ class BaseFitter:
         kw["afs"] = self.afs
         kw["ld"] = self.ld
 
+        self.converged_state = None
+
         with tqdm.trange(
             self.niter, disable=not progress, desc="Fitting model"
         ) as self.pbar:
@@ -329,31 +342,40 @@ class BaseFitter:
 
         patience = self.options.get("patience", 100)
 
-        if not hasattr(self, "ema"):
-            self.ema = None
-            self.best_elpd = None
-            self.a = 0
+        if self.converged_state is None:
+            self.converged_state = {
+                "ema": None,
+                "best_elpd": None,
+                "a": 0,
+                "last_elpd": None,
+            }
+
+        cs = self.converged_state
 
         if i % 10 == 0:
             w = self.weights.at[0].set(0.0).at[1].set(1.0)
             es = np.asarray(self.elpd(self.state.particles, w))
             e = es.sum()
-            if self.ema is None:
-                self.ema = e
+            last_e = cs["ema"] or 0.0
+            if cs["ema"] is None:
+                cs["ema"] = e
             else:
-                self.ema = 0.9 * self.ema + 0.1 * e
-            if self.best_elpd is None or self.ema > self.best_elpd[1]:
-                self.a = 0
-                self.best_elpd = (i, self.ema, self.state)
+                cs["ema"] = 0.9 * cs["ema"] + 0.1 * e
+            if cs["best_elpd"] is None or cs["ema"] > cs["best_elpd"][1]:
+                cs["a"] = 0
+                cs["best_elpd"] = (i, cs["ema"], self.state)
             else:
-                self.a += 1
-            self.pbar.set_description(f"elpd={self.ema:.2f} a={self.a} e={es}")
-            if i - self.best_elpd[0] > patience:
+                cs["a"] += 1
+                # delta symbol: ∆
+            self.pbar.set_description(
+                f"∆={e - last_e:.0f} selpd={cs['ema']:.0f} a={cs['a']}"
+            )
+            if i - cs["best_elpd"][0] > patience:
                 logger.info(
                     "The expected log-predictive density has not improved in "
                     f"the last {patience} iterations; exiting."
                 )
-                return self.best_elpd
+                return cs["best_elpd"]
 
         # catch-all return if not converged or not checked
         return False
@@ -419,6 +441,10 @@ class BaseFitter:
         return w[1] / w[0]
 
     ## some useful properties
+    @property
+    def theta(self):
+        return self.options.get("theta", self._calculate_watterson())
+
     @property
     def window_size(self):
         """
@@ -501,7 +527,24 @@ class PhlashFitter(BaseFitter):
             }
         else:
             self.test_afs_transform = None
+
+        # massage the chunks
         self.chunks = self.chunks.reshape(-1, *self.chunks.shape[2:])[:, None]
+        # if too many chunks, downsample so as not to use up all the gpu memory
+        if self.num_chunks > 5 * self.minibatch_size * self.niter:
+            # important: use numpy to do this _not_ jax. (jax will put it on the gpu
+            # which causes the very problem we are trying to solve.)
+            old_size = self.chunks.size
+            rng = np.random.default_rng(np.asarray(self.get_key()))
+            self.chunks = rng.choice(
+                self.chunks, size=(5 * self.minibatch_size * self.niter,), replace=False
+            )
+            gb = 1024**3
+            logger.debug(
+                "Downsampled chunks from {:.2f}Gb to {:.2f}Gb",
+                old_size / gb,
+                self.chunks.size / gb,
+            )
         logger.debug("after merging: chunks.shape={}", self.chunks.shape)
 
     def _optimization_step(self, inds, **kwargs):
