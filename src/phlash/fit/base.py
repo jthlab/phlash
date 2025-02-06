@@ -386,7 +386,7 @@ class BaseFitter:
         """
         lr = self.options.get(
             "learning_rate",
-            0.01,
+            0.1,
             # optax.cosine_decay_schedule(.1, .75 * self.niter, 1e-3)
         )
         opt = optax.nadam(learning_rate=lr)
