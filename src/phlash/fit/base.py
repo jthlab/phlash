@@ -553,7 +553,12 @@ class PhlashFitter(BaseFitter):
         """
         # Placeholder for actual optimization logic.
         kwargs["afs_transform"] = self.afs_transform
-        return super()._optimization_step(inds, **kwargs)
+        if not self.options.get("learn_t", False):
+            old_t_tr = self.state.particles.t_tr
+            new_st = super()._optimization_step(inds, **kwargs)
+            new_particles = replace(new_st.particles, t_tr=old_t_tr)
+            new_st = new_st._replace(particles=new_particles)
+        return new_st
 
 
 # for post-mortem/debugging...
