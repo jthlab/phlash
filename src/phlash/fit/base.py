@@ -40,6 +40,13 @@ class BaseFitter:
         Initialize the fitting procedure with data and configuration options.
         """
         self.data = data
+
+        # FIXME: assumes all datasets have the same number of samples
+        try:
+            self.num_samples = next(d.hets.shape[0] for d in self.data if d.hets is not None)
+        except StopIteration:
+            raise ValueError("No data found")
+
         self.test_data = test_data
         self.options = options
         self.M = options.get("M", 16)
@@ -82,6 +89,11 @@ class BaseFitter:
         chunk_size = self.options.get("chunk_size", 50_000)
         max_samples = self.options.get("max_samples", 20)
         num_workers = self.options.get("num_workers")
+
+        # process afs and ld first, because init_chunks destroys data!
+        self.afs = phlash.data.init_afs(self.data)
+        self.ld = phlash.data.init_ld(self.data)
+
         (self.chunks, self.populations, self.pop_indices) = phlash.data.init_chunks(
             self.data, self.window_size, overlap, chunk_size, max_samples, num_workers
         )
@@ -92,9 +104,6 @@ class BaseFitter:
         # avoid storing a huge array on gpu if we're only going to use a small part of
         # it in expectation, we will sample S * niter rows of the data.
         logger.debug("minibatch size: {}", self.minibatch_size)
-
-        self.afs = phlash.data.init_afs(self.data)
-        self.ld = phlash.data.init_ld(self.data)
 
         if self.test_data:
             self.test_afs = phlash.data.init_afs([self.test_data])
@@ -462,17 +471,6 @@ class BaseFitter:
                 raise ValueError("mutation rate is already known from truth")
             return self.options["truth"].theta
         return self.options.get("mutation_rate")
-
-    @property
-    def num_samples(self):
-        """
-        Get the number of samples.
-        """
-        # FIXME: assumes all datasets have the same number of samples
-        try:
-            return next(d.hets.shape[0] for d in self.data if d.hets is not None)
-        except StopIteration:
-            raise ValueError("No data found")
 
     @property
     def niter(self):

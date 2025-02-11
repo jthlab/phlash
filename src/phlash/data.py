@@ -496,15 +496,19 @@ def init_chunks(
             overlap,
         )
     # collect chunks
-    chunks = [
-        ds.chunk(overlap=overlap, chunk_size=chunk_size, window_size=window_size)
-        for ds in data
-    ]
+    chunks = []
+    pop_indices = data[0].pop_indices  # guaranteed to be the same by the checks above
+    # pop data off the list in order to conserve memory
+    # when this finished, no more data!
+    while data:
+        ds = data.pop()
+        chunks.append(
+            ds.chunk(overlap=overlap, chunk_size=chunk_size, window_size=window_size)
+        )
     assert len({ch.shape[-1] for ch in chunks}) == 1
     assert all(ch.ndim == 4 for ch in chunks)
     assert all(ch.shape[3] == 2 for ch in chunks)
     combined_chunks = np.concatenate(chunks, 1)
-    pop_indices = data[0].pop_indices  # guaranteed to be the same by the checks above
     assert len(combined_chunks) == len(pop_indices)
     return combined_chunks, pops, pop_indices
 
