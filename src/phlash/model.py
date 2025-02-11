@@ -9,6 +9,7 @@ from jaxtyping import Array, Float, Float64, Int8, Int64
 import phlash.hmm
 from phlash.ld.expected import expected_ld
 from phlash.params import MCMCParams
+from phlash.util import softplus_inv
 
 
 @jax.tree_util.register_dataclass
@@ -18,8 +19,8 @@ class PhlashMCMCParams(MCMCParams):
 
     @property
     def c(self):
-        # return jax.nn.softplus(self.c_tr)
-        return jnp.exp(self.c_tr)
+        return jax.nn.softplus(-self.c_tr)
+        # return jnp.exp(self.c_tr)
 
     @property
     def log_c(self):
@@ -54,7 +55,8 @@ class PhlashMCMCParams(MCMCParams):
             window_size=window_size,
             N0=N0,
         )
-        return cls(c_tr=jnp.log(c), **asdict(mcp))
+        c_tr = -softplus_inv(c)
+        return cls(c_tr=c_tr, **asdict(mcp))
 
 
 def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:

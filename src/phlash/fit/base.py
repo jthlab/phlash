@@ -225,12 +225,7 @@ class BaseFitter:
             key1, key2 = jax.random.split(key)
             x1 = x0 + sd * jax.random.normal(key1)
             init = unravel(x1)
-            t = init.times
-            t = jnp.append(t, 2 * t[-1])
-            ta = (t[:-1] + t[1:]) / 2.0
-            c = init0.to_dm().eta(ta)
-            c_tr = jnp.log(c) + sd * jax.random.normal(key2, c.shape)
-            return replace(init, c_tr=c_tr)
+            return init
 
         keys = jax.random.split(self.get_key(), self.options.get("num_particles", 500))
         self.particles = jax.vmap(f)(keys)
