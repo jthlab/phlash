@@ -7,9 +7,6 @@ from diffrax import Kvaerno3, ODETerm, PIDController, diffeqsolve
 from phlash.ld.data import LdStats
 from phlash.size_history import SizeHistory
 
-# this matters a lot for gradient accuracy
-jax.config.update("jax_enable_x64", True)
-
 
 def drift(c):
     D = jnp.array([[-3, 1, 1], [4, -5, 0], [0, 1, -2]])
@@ -44,21 +41,42 @@ def f(t, y, args):
     dld = (D + R) @ y["ld"] + U * y["h"]
     dh = -y["h"] * c + args["theta"]
     D2, Dz, pi2 = y["ld"]
-    # dnorm = {
-    #     #"D2/pi2": (pi2 * dld[0] - D2 * dld[2]) / pi2**2,
-    #     "D2/pi2": dld[0] / pi2 - y["norm"]["D2/pi2"] * dld[2] / pi2,
-    #     #"Dz/pi2": (pi2 * dld[1] - Dz * dld[2]) / pi2**2,
-    #     "Dz/pi2": dld[1] / pi2 - y["norm"]["Dz/pi2"] * dld[2] / pi2,
-    # }
-    # ret = dict(ld=dld, h=dh, norm=dnorm)
     ret = dict(ld=dld, h=dh)
     return ret
 
 
-def expected_ld(eta: SizeHistory, r: float, theta: float) -> LdStats:
-    "expected LD statistics at recombination distance r"
-    ld0 = stationary_ld(eta.c[-1], r, theta)
+def expected_ld_expm(eta: SizeHistory, r: float, theta: float) -> LdStats:
+    # integrate the system forwards in time starting from the last epoch
+    R = recomb(r)
+    U = mutation(theta)
+    D = drift(1.0)
+    b = theta * jnp.array([0.0, 0.0, 0.0, 1.0])
 
+    def f(y0, tup):
+        ci, ti, ti1 = tup
+        # form 4x4 rate matrix
+        Q11 = ci * D + R
+        Q12 = U[:, None]
+        Q21 = jnp.zeros([1, 3])
+        Q22 = -ci
+        Q = jnp.block([[Q11, Q12], [Q21, Q22]])
+        dt = ti1 - ti
+        # alternatively, compute by eigenvalue decomposition?
+        e_tQ = jax.scipy.linalg.expm(Q * dt)
+        y = e_tQ @ y0
+        y += jnp.linalg.solve(Q, e_tQ @ b - b)
+        return y, None
+
+    y0 = jnp.append(stationary_ld(eta.c[-1], r, theta), theta)
+    ld, _ = jax.lax.scan(f, y0, (eta.c[:-1], eta.t[:-1], eta.t[1:]), reverse=True)
+    return {
+        "D2/pi2": ld[0] / ld[2],
+        "Dz/pi2": ld[1] / ld[2],
+    }
+
+
+def expected_ld_ode(eta: SizeHistory, r: float, theta: float) -> LdStats:
+    ld0 = stationary_ld(eta.c[-1], r, theta)
     norm = {
         "D2/pi2": ld0[0] / ld0[2],
         "Dz/pi2": ld0[1] / ld0[2],
@@ -99,3 +117,6 @@ def expected_ld(eta: SizeHistory, r: float, theta: float) -> LdStats:
     }
     # norm = sol.ys["norm"]
     # return jax.tree.map(lambda a: a[0], norm)
+
+
+expected_ld = expected_ld_expm
