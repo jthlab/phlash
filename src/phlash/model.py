@@ -9,7 +9,6 @@ from jaxtyping import Array, Float, Float64, Int8, Int64
 import phlash.hmm
 from phlash.ld.expected import expected_ld
 from phlash.params import MCMCParams
-from phlash.util import softplus_inv
 
 
 @jax.tree_util.register_dataclass
@@ -19,12 +18,8 @@ class PhlashMCMCParams(MCMCParams):
 
     @property
     def c(self):
-        return jax.nn.softplus(-self.c_tr)
         # return jnp.exp(self.c_tr)
-
-    @property
-    def log_c(self):
-        return jnp.log(self.c)
+        return jax.nn.squareplus(self.c_tr)
 
     def to_dm(self) -> phlash.size_history.DemographicModel:
         c = jnp.array(self.pattern.expand(self.c))
@@ -55,7 +50,13 @@ class PhlashMCMCParams(MCMCParams):
             window_size=window_size,
             N0=N0,
         )
-        c_tr = -softplus_inv(c)
+
+        # c_tr = jnp.log(c)
+        # inverse of squareplus: y = (x + sqrt(x^2 + b)) / 2
+        def squareplus_inv(y, b=4):
+            return y - b / 4 / y
+
+        c_tr = squareplus_inv(c)
         return cls(c_tr=c_tr, **asdict(mcp))
 
 
@@ -67,7 +68,7 @@ def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:
             (mcp.log_rho_over_theta, 0.0, 1.0),
         ]
     )
-    ret -= alpha * jnp.sum(abs(jnp.diff(mcp.c_tr)))
+    ret -= alpha * jnp.sum(jnp.diff(mcp.c_tr) ** 2)
     x, _ = jax.flatten_util.ravel_pytree(mcp)
     ret -= beta * x.dot(x)
     return ret
