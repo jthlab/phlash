@@ -223,9 +223,9 @@ class BaseFitter:
             )
             init = fl(c=jnp.ones(16))
             x0, unravel = ravel_pytree(init)
-            sd = self.options.get("sigma", 0.5)
+            sd = self.options.get("sigma", 1.0)
             key1, key2 = jax.random.split(key)
-            x1 = x0 + sd * jax.random.normal(key1)
+            x1 = x0 + sd * jax.random.normal(key1, shape=x0.shape)
             init = unravel(x1)
             return init
 

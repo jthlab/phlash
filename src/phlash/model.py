@@ -18,8 +18,7 @@ class PhlashMCMCParams(MCMCParams):
 
     @property
     def c(self):
-        # return jnp.exp(self.c_tr)
-        return jax.nn.squareplus(self.c_tr)
+        return jnp.exp(self.c_tr)
 
     def to_dm(self) -> phlash.size_history.DemographicModel:
         c = jnp.array(self.pattern.expand(self.c))
@@ -51,12 +50,7 @@ class PhlashMCMCParams(MCMCParams):
             N0=N0,
         )
 
-        # c_tr = jnp.log(c)
-        # inverse of squareplus: y = (x + sqrt(x^2 + b)) / 2
-        def squareplus_inv(y, b=4):
-            return y - b / 4 / y
-
-        c_tr = squareplus_inv(c)
+        c_tr = jnp.log(c)
         return cls(c_tr=c_tr, **asdict(mcp))
 
 
