@@ -64,9 +64,8 @@ def expected_ld_expm(eta: SizeHistory, r: float, theta: float) -> LdStats:
         # alternatively, compute by eigenvalue decomposition?
         # if we assume that c is bounded by exp(10) <= 1e5 and r, theta are bounded by
         # 1, then the l1 norm of Q (largest absolute column sum) is bounded by
-        # 10 * 1e6 = 1e6
-        # so log2(norm(Q)) <= 20
-        e_tQ = jax.scipy.linalg.expm(Q * dt, max_squarings=32)
+        # 6 * c <= 6e5, so log2(norm(Q)) <= 20
+        e_tQ = jax.scipy.linalg.expm(Q * dt, max_squarings=20)
         y = e_tQ @ y0
         y += jnp.linalg.solve(Q, e_tQ @ b - b)
         return y, None
