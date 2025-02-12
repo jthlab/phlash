@@ -43,7 +43,9 @@ class BaseFitter:
 
         # FIXME: assumes all datasets have the same number of samples
         try:
-            self.num_samples = next(d.hets.shape[0] for d in self.data if d.hets is not None)
+            self.num_samples = next(
+                d.hets.shape[0] for d in self.data if d.hets is not None
+            )
         except StopIteration:
             raise ValueError("No data found")
 
@@ -292,8 +294,8 @@ class BaseFitter:
         kw = dict(
             kern=self.train_kern,
             weights=weights,
-            alpha=self.options.get("alpha", 0.0),
-            beta=self.options.get("beta", 0.0),
+            alpha=self.options.get("alpha", 1e-5),
+            beta=self.options.get("beta", 1e-5),
         )
 
         logger.info("Starting optimization...")
@@ -549,7 +551,8 @@ class PhlashFitter(BaseFitter):
         if not self.options.get("learn_t", False):
             old_t_tr = self.state.particles.t_tr
             new_st = super()._optimization_step(inds, **kwargs)
-            new_particles = replace(new_st.particles, t_tr=old_t_tr)
+            new_c_tr = new_st.particles.c_tr.clip(-10.0, 10.0)
+            new_particles = replace(new_st.particles, t_tr=old_t_tr, c_tr=new_c_tr)
             new_st = new_st._replace(particles=new_particles)
         return new_st
 
