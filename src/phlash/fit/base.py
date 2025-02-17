@@ -504,10 +504,11 @@ class PhlashFitter(BaseFitter):
         # merge all the chunks
         super().load_data()
         # convert afs to standard vector representation in the 1-pop case
+        daft = self.options.get('afs_transform', default_afs_transform)
         if self.afs:
             self.afs = {k: v.todense()[1:-1] for k, v in self.afs.items()}
             self.afs_transform = {
-                n: default_afs_transform(self.afs[n]) for n in self.afs
+                n: daft(self.afs[n]) for n in self.afs
             }
             for n in self.afs:
                 logger.debug(
@@ -518,7 +519,7 @@ class PhlashFitter(BaseFitter):
         if self.test_afs:
             self.test_afs = {k: v.todense()[1:-1] for k, v in self.test_afs.items()}
             self.test_afs_transform = {
-                n: default_afs_transform(self.test_afs[n]) for n in self.test_afs
+                n: daft(self.test_afs[n]) for n in self.test_afs
             }
         else:
             self.test_afs_transform = None
