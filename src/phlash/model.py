@@ -143,25 +143,23 @@ def _loglik_afs(dm, afs, afs_transform):
 
 def _loglik_ld(dm, N0, ld):
     @vmap
-    def f(ab, d):
-        @vmap
-        def f(r):
-            dmr = dm.rescale(dm.theta / 4 / N0)
-            e = expected_ld(dmr.eta, 2 * r, 2 * dmr.theta)
-            return jnp.array([e["D2/pi2"], e["Dz/pi2"]])
-
-        # a, b = ab
-        # x = jnp.geomspace(a, b, 8)
-        # y = f(x)
-        # expected = vmap(jnp.trapezoid, (1, None))(y, x) / (b - a)
-        expected = f(ab).mean(0)
-        # jax.debug.print("obs:{} exp:{}", d["mu"], expected)
-        u = d["mu"] - expected
-        S = 1e-6 * jnp.eye(len(expected)) + d["Sigma"]
-        return -u @ jnp.linalg.solve(S, u)
+    def f(r):
+        dmr = dm.rescale(dm.theta / 4 / N0)
+        e = expected_ld(dmr.eta, 2 * r, 2 * dmr.theta)
+        return jnp.array([e["D2/pi2"], e["Dz/pi2"]])
 
     ab = jnp.array(list(ld.keys()))
+    r = jnp.append(ab[:, 0], ab[-1, 1])
+    eld = f(r)
+
+    @vmap
+    def g(d, e):
+        u = d["mu"] - e
+        S = 1e-6 * jnp.eye(len(e)) + d["Sigma"]
+        return -u @ jnp.linalg.solve(S, u)
+
     d = jax.tree.map(lambda *a: jnp.array(a), *ld.values())
-    lls = f(ab, d)
+    e = (eld[:-1] + eld[1:]) / 2
+    lls = g(d, e)
     # jax.debug.print("l4s:{}", l4s)
     return lls.sum()
