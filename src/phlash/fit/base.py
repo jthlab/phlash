@@ -434,7 +434,12 @@ class BaseFitter:
         # Placeholder for actual optimization logic.
         kwargs["inds"] = inds
         kwargs["warmup"] = self.warmup_chunks[inds]
-        return self.step(self.state, **kwargs)
+        old_t_tr = self.state.particles.t_tr
+        new_st = self.step(self.state, **kwargs)
+        if not self.options.get("learn_t", False):
+            new_particles = replace(new_st.particles, t_tr=old_t_tr)
+            new_st = new_st._replace(particles=new_particles)
+        return new_st
 
     def _calculate_watterson(self):
         """
@@ -504,12 +509,10 @@ class PhlashFitter(BaseFitter):
         # merge all the chunks
         super().load_data()
         # convert afs to standard vector representation in the 1-pop case
-        daft = self.options.get('afs_transform', default_afs_transform)
+        daft = self.options.get("afs_transform", default_afs_transform)
         if self.afs:
             self.afs = {k: v.todense()[1:-1] for k, v in self.afs.items()}
-            self.afs_transform = {
-                n: daft(self.afs[n]) for n in self.afs
-            }
+            self.afs_transform = {n: daft(self.afs[n]) for n in self.afs}
             for n in self.afs:
                 logger.debug(
                     "transformed afs[{}]:{}", n, self.afs_transform[n] @ self.afs[n]
@@ -518,9 +521,7 @@ class PhlashFitter(BaseFitter):
             self.afs_transform = None
         if self.test_afs:
             self.test_afs = {k: v.todense()[1:-1] for k, v in self.test_afs.items()}
-            self.test_afs_transform = {
-                n: daft(self.test_afs[n]) for n in self.test_afs
-            }
+            self.test_afs_transform = {n: daft(self.test_afs[n]) for n in self.test_afs}
         else:
             self.test_afs_transform = None
 
@@ -549,13 +550,11 @@ class PhlashFitter(BaseFitter):
         """
         # Placeholder for actual optimization logic.
         kwargs["afs_transform"] = self.afs_transform
-        if not self.options.get("learn_t", False):
-            old_t_tr = self.state.particles.t_tr
-            new_st = super()._optimization_step(inds, **kwargs)
-            new_c_tr = new_st.particles.c_tr.clip(-10.0, 10.0)
-            new_particles = replace(new_st.particles, t_tr=old_t_tr, c_tr=new_c_tr)
-            new_st = new_st._replace(particles=new_particles)
-        return new_st
+        ret = super()._optimization_step(inds, **kwargs)
+        new_particles = replace(
+            ret.particles, c_tr=jnp.clip(ret.particles.c_tr, -10.0, 10.0)
+        )
+        return ret._replace(particles=new_particles)
 
 
 # for post-mortem/debugging...
