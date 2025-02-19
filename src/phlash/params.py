@@ -55,6 +55,7 @@ def static_field(**kw):
 @dataclass(kw_only=True)
 class MCMCParams:
     pattern_str: str = static_field()
+    pi_tr: jax.Array
     t_tr: jax.Array
     log_rho_over_theta: float
     theta: float = static_field()
@@ -90,6 +91,7 @@ class MCMCParams:
         pattern_str: str,
         t1: float,
         tM: float,
+        pi: jax.Array,
         theta: float,
         rho: float,
         window_size: int = 100,
@@ -100,6 +102,7 @@ class MCMCParams:
         return cls(
             pattern_str=pattern_str,
             t_tr=t_tr,
+            pi_tr=jnp.log(pi),
             log_rho_over_theta=jnp.log(rho / theta),
             theta=theta,
             window_size=window_size,
@@ -107,9 +110,15 @@ class MCMCParams:
         )
 
     @property
+    def pi(self):
+        return jax.nn.softmax(self.pi_tr)
+
+    @property
     def times(self):
         t1, tM = self.t
-        return jnp.insert(jnp.geomspace(t1, tM, self.M - 1), 0, 0.0)
+        Pi = jnp.insert(jnp.cumsum(self.pi), 0, 0.0)
+        t = t1 * (tM / t1) ** Pi
+        return jnp.insert(t, 0, 0.0)
 
     @property
     def t1(self):

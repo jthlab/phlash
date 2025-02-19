@@ -14,7 +14,7 @@ class LinearAfsTransform(NamedTuple):
 
 class IdentityAfsTransform(NamedTuple):
     def __call__(self, x: jax.Array) -> jax.Array:
-        return x
+        return x.astype(float)
 
 
 def fold_transform(n):
@@ -48,7 +48,11 @@ def bws_transform(afs, alpha: float = 0.2) -> np.ndarray:
     return ret
 
 
-def default_afs_transform(afs: np.ndarray) -> np.ndarray:
+def identity_transform(afs: np.ndarray) -> LinearAfsTransform:
+    return IdentityAfsTransform()
+
+
+def default_afs_transform(afs: np.ndarray) -> LinearAfsTransform:
     if afs.ndim > 1:
         return IdentityAfsTransform()
 

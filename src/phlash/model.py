@@ -1,8 +1,8 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 import jax
 import jax.numpy as jnp
-from jax import vmap
+from jax import lax, vmap
 from jax.scipy.special import xlogy
 from jaxtyping import Array, Float, Float64, Int8, Int64
 
@@ -20,6 +20,10 @@ class PhlashMCMCParams(MCMCParams):
     def c(self):
         return jnp.exp(self.c_tr)
 
+    @staticmethod
+    def cinv(c: jax.Array) -> jax.Array:
+        return jnp.log(c)
+
     def to_dm(self) -> phlash.size_history.DemographicModel:
         c = jnp.array(self.pattern.expand(self.c))
         eta = phlash.size_history.SizeHistory(t=self.times, c=c)
@@ -35,6 +39,7 @@ class PhlashMCMCParams(MCMCParams):
         pattern_str: str,
         t1: float,
         tM: float,
+        pi: jax.Array,
         theta: float,
         rho: float,
         window_size: int = 100,
@@ -44,13 +49,14 @@ class PhlashMCMCParams(MCMCParams):
             pattern_str=pattern_str,
             t1=t1,
             tM=tM,
+            pi=pi,
             theta=theta,
             rho=rho,
             window_size=window_size,
             N0=N0,
         )
 
-        c_tr = jnp.log(c)
+        c_tr = cls.cinv(c)
         return cls(c_tr=c_tr, **asdict(mcp))
 
 
@@ -98,6 +104,9 @@ def log_density(
     Returns:
         The log density, or negative infinity where the result is not finite.
     """
+    mcp = replace(
+        mcp, t_tr=lax.stop_gradient(mcp.t_tr), pi_tr=lax.stop_gradient(mcp.pi_tr)
+    )
     dm = mcp.to_dm()
     l1 = log_prior(mcp, alpha, beta)
 
