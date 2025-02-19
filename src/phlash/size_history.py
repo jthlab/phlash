@@ -169,12 +169,12 @@ class SizeHistory(NamedTuple):
     @property
     def sf(self) -> Callable[[float], float]:
         R = self.R
-        return lambda x: np.exp(-R(x))
+        return lambda x: jnp.exp(-R(x))
 
     @property
     def cdf(self) -> Callable[[float], float]:
         R = self.R
-        return lambda x: -np.expm1(-R(x))
+        return lambda x: -jnp.expm1(-R(x))
 
     def ect(self):
         "expected time to coalescence within each interval"
