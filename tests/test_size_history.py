@@ -36,6 +36,26 @@ def test_etjj(eta):
     assert np.all(etjj[1:] < etjj[:-1])
 
 
+def test_etjj_large_n_quad(random_eta, rng):
+    eta = random_eta()
+    n = 100
+    etjj = eta.etjj(n)
+
+    @jax.jit
+    def f(t, c):
+        return t * eta.density(c)(t)
+
+    for k in range(2, n + 1):
+        c = k * (k - 1) / 2
+        I1, err1 = quad(f, 0.0, eta.t[1], args=(c,))
+        I2, err2 = quad(f, eta.t[1], eta.t[-1], points=eta.t[1:], args=(c,))
+        I3, err3 = quad(f, eta.t[-1], np.inf, args=(c,))
+        try:
+            np.testing.assert_allclose(I1 + I2 + I3, etjj[k - 2], atol=err1 + err2)
+        except Exception:
+            print(f"Failed for k={k}, I1={I1}, I2={I2}, I3={I3}, etjj[k-2]={etjj[k-2]}")
+
+
 def test_mean1():
     eta = SizeHistory(t=np.array([0.0]), c=np.ones(1))
     n = 20
@@ -64,8 +84,8 @@ def test_tv(eta):
 def test_density(eta, rng):
     c = rng.normal() ** 2
     f = jax.jit(eta.density(c))
-    I, err = quad(f, 0.0, np.inf)
-    np.testing.assert_allclose(I, 1.0, atol=err)
+    S, err = quad(f, 0.0, np.inf)
+    np.testing.assert_allclose(S, 1.0, atol=err)
 
 
 def test_tv_quad(random_eta, rng):
@@ -102,6 +122,25 @@ def test_l2_quad(random_eta, rng):
     l1b, err = quad(g, t[-1], T)
     l1 = jnp.sqrt(l1a + l1b)
     l2 = eta1.l2(eta2, T)
+    np.testing.assert_allclose(l1, l2)
+
+
+def test_l2_log_quad(random_eta, rng):
+    eta1 = random_eta()
+    eta2 = random_eta()
+    T = 5.0 + abs(rng.normal())
+
+    @jax.jit
+    def g(log_t):
+        t = jnp.exp(log_t)
+        return (jnp.log(eta1(t, Ne=True)) - jnp.log(eta2(t, Ne=True))) ** 2
+
+    t = np.array(sorted(set(eta1.t.tolist()) | set(eta2.t.tolist())))
+    t = t[t < T]
+    l1a, err = quad(g, np.log(t[1]), np.log(t[-1]), points=np.log(t[2:-1]))
+    l1b, err = quad(g, np.log(t[-1]), np.log(T))
+    l1 = jnp.sqrt(l1a + l1b)
+    l2 = eta1.l2(eta2, t_max=T, log=True)
     np.testing.assert_allclose(l1, l2)
 
 
@@ -153,3 +192,27 @@ def test_to_demes(eta):
     assert g is not None
     assert len(g.demes) == 1
     assert len(g.demes[0].epochs) == len(eta.t)
+
+
+def test_hellinger_psd(random_eta, rng):
+    eta1 = random_eta()
+    np.testing.assert_allclose(eta1.hellinger(eta1), 0.0, atol=1e-8)
+    eta2 = random_eta()
+    np.testing.assert_allclose(eta1.hellinger(eta2), eta2.hellinger(eta1), atol=1e-8)
+    assert eta1.hellinger(eta2) >= 0.0
+
+
+def test_hellinger_quad(random_eta, rng):
+    eta1 = random_eta()
+    eta2 = random_eta()
+    n = rng.integers(2, 20)
+    c = 2 * n * (2 * n - 1) / 2
+    f1 = eta1.density(c)
+    f2 = eta2.density(c)
+    g = jax.jit(lambda t: jnp.sqrt(f1(t) * f2(t)))
+    t = sorted(set(eta1.t.tolist()) | set(eta2.t.tolist()))
+    h1a, err1 = quad(g, 0.0, t[-1], points=t[1:-1])
+    h1b, err2 = quad(g, t[-1], np.inf)
+    h1 = 1 - (h1a + h1b)
+    h2 = eta1.hellinger(eta2)
+    np.testing.assert_allclose(h1, h2, atol=err1 + err2)

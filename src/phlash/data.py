@@ -2,8 +2,9 @@
 
 import operator
 import subprocess
+from collections import defaultdict
 from collections.abc import Iterable
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import jax.tree
 import msprime
@@ -215,6 +216,7 @@ def _from_ts(
     *,
     ts: tskit.TreeSequence,
     nodes: list[tuple[int, int]],
+    populations: int | dict[int, Any] = None,
     left: int = None,
     right: int = None,
     window_size: int = 100,
@@ -223,6 +225,10 @@ def _from_ts(
     mask: list[tuple[int, int]] = None,
     progress: bool = True,
 ) -> Contig:
+    if isinstance(populations, int):
+        default_population = populations
+        populations = defaultdict(lambda: default_population)
+
     if left is None:
         left = 0
 

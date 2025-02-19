@@ -192,12 +192,14 @@ class BaseFitter:
             # this pattern is similar to the psmc default, but we have fewer params
             # (16) to use, so are a little more conservative with parameter tying
             pat = "16*1"
+            M = len(Pattern(pat))
             init = PhlashMCMCParams.from_linear(
                 pattern_str=pat,
                 rho=rho,
                 t1=t1,
                 tM=tM,
-                c=jnp.ones(len(Pattern(pat))),  # len(c)==len(Pattern(pattern))
+                pi=jnp.ones(M - 2) / (M - 2),
+                c=jnp.ones(M),
                 theta=theta,
                 N0=N0,
                 window_size=self.window_size,
@@ -215,6 +217,7 @@ class BaseFitter:
                 PhlashMCMCParams.from_linear,
                 pattern_str="16*1",
                 rho=init0.rho,
+                pi=init0.pi,
                 t1=init0.t1,
                 tM=init0.tM,
                 theta=init0.theta,
@@ -227,9 +230,12 @@ class BaseFitter:
             key1, key2 = jax.random.split(key)
             x1 = x0 + sd * jax.random.normal(key1, shape=x0.shape)
             init = unravel(x1)
+            # pi = jax.random.dirichlet(key2, jnp.ones(len(init.pi)))
+            pi = jnp.ones(len(init.pi)) / len(init.pi)
+            init = replace(init, pi_tr=jnp.log(pi))
             return init
 
-        keys = jax.random.split(self.get_key(), self.options.get("num_particles", 500))
+        keys = jax.random.split(self.get_key(), self.num_particles)
         self.particles = jax.vmap(f)(keys)
 
     def data_iterator(self):
@@ -253,6 +259,8 @@ class BaseFitter:
             except ImportError:
                 # if necessary libraries aren't installed, just initialize a dummy
                 # callback
+                logger.debug("liveplot_cb not available")
+
                 def cb(*a, **kw):
                     pass
 
@@ -390,18 +398,13 @@ class BaseFitter:
         """
         Initialize the optimizer.
         """
-        lr = self.options.get(
-            "learning_rate",
-            0.1,
-            # optax.cosine_decay_schedule(.1, .75 * self.niter, 1e-3)
-        )
+        lr = self.options.get("learning_rate", 1e-2)
         opt = optax.nadam(learning_rate=lr)
         # df = jit(grad(self.log_density), static_argnames=["kern"])
         df = grad(self.log_density)
         self.svgd = blackjax.svgd(df, opt)
         self.state = self.svgd.init(self.particles)
         self.step = jit(self.svgd.step, static_argnames=["kern"])
-        # self.step = self.svgd.step
 
     def log_density(self, particle, **kwargs):
         """
@@ -434,11 +437,7 @@ class BaseFitter:
         # Placeholder for actual optimization logic.
         kwargs["inds"] = inds
         kwargs["warmup"] = self.warmup_chunks[inds]
-        old_t_tr = self.state.particles.t_tr
         new_st = self.step(self.state, **kwargs)
-        if not self.options.get("learn_t", False):
-            new_particles = replace(new_st.particles, t_tr=old_t_tr)
-            new_st = new_st._replace(particles=new_particles)
         return new_st
 
     def _calculate_watterson(self):
@@ -502,6 +501,21 @@ class BaseFitter:
             S = max(1, min(5, int(self.num_chunks / self.niter)))
         return S
 
+    @property
+    def num_particles(self):
+        """
+        Get the number of particles.
+        """
+        return self.options.get("num_particles", 500)
+
+
+def l2_kernel(p1: PhlashMCMCParams, p2: PhlashMCMCParams, length_scale=1.0):
+    eta1 = p1.to_dm().eta
+    eta2 = p2.to_dm().eta
+    l2_2 = eta1.squared_l2(eta2, t_max=15.0, log=True)
+    ret = jnp.exp(-l2_2 / length_scale)
+    return ret
+
 
 class PhlashFitter(BaseFitter):
     def load_data(self):
@@ -515,7 +529,7 @@ class PhlashFitter(BaseFitter):
             self.afs_transform = {n: daft(self.afs[n]) for n in self.afs}
             for n in self.afs:
                 logger.debug(
-                    "transformed afs[{}]:{}", n, self.afs_transform[n] @ self.afs[n]
+                    "transformed afs[{}]:{}", n, self.afs_transform[n](self.afs[n])
                 )
         else:
             self.afs_transform = None
@@ -544,17 +558,49 @@ class PhlashFitter(BaseFitter):
             )
         logger.debug("after merging: chunks.shape={}", self.chunks.shape)
 
+    def initialize_optimizer(self):
+        """
+        Initialize the optimizer.
+        """
+        lr = self.options.get("learning_rate", 1e-2)
+        opt = optax.nadam(learning_rate=lr)
+        # df = jit(grad(self.log_density), static_argnames=["kern"])
+        df = grad(self.log_density)
+        self.svgd = blackjax.svgd(df, opt)
+        self.state = self.svgd.init(self.particles)
+        self.step = jit(self.svgd.step, static_argnames=["kern"])
+        # self.step = self.svgd.step
+
     def _optimization_step(self, inds, **kwargs):
         """
         Perform a single optimization step.
         """
         # Placeholder for actual optimization logic.
         kwargs["afs_transform"] = self.afs_transform
-        ret = super()._optimization_step(inds, **kwargs)
-        new_particles = replace(
-            ret.particles, c_tr=jnp.clip(ret.particles.c_tr, -10.0, 10.0)
-        )
-        return ret._replace(particles=new_particles)
+        old_st = self.state
+        new_st = super()._optimization_step(inds, **kwargs)
+        if not self.options.get("learn_t", False):
+
+            @vmap
+            def f(mcp, old_mcp, key):
+                mcp = replace(mcp, pi_tr=old_mcp.pi_tr)
+                dm = mcp.to_dm()
+                n = self.num_samples
+                r = n * (n - 1) / 2.0
+                eta_c = dm.eta._replace(c=r * dm.eta.c)
+                key1, key2 = jax.random.split(key)
+                q0 = jax.random.uniform(key1, minval=0.02, maxval=0.05)
+                t0 = eta_c.quantile(q0)
+                q1 = jax.random.uniform(key2, minval=0.95, maxval=0.99)
+                t1 = dm.eta.quantile(q1)
+                t_new = jnp.array([t0, t1 - t0])
+                t_tr_new = jnp.log(t_new)
+                return replace(mcp, t_tr=t_tr_new)
+
+            keys = jax.random.split(self.get_key(), self.num_particles)
+            new_particles = f(new_st.particles, old_st.particles, keys)
+            new_st = new_st._replace(particles=new_particles)
+        return new_st
 
 
 # for post-mortem/debugging...

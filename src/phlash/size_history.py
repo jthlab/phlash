@@ -6,8 +6,7 @@ import jax.numpy as jnp
 import msprime
 import numpy as np
 import scipy
-from jax import jit, vmap
-from scipy.optimize import root_scalar
+from jax import jit, lax, vmap
 
 from phlash.jax_ppoly import JaxPPoly
 from phlash.memory import memory
@@ -105,9 +104,12 @@ class SizeHistory(NamedTuple):
         """
         R = 0.0
         c = []
+        eps = 1e-8
         for dt, p_i in zip(jnp.diff(t), p):
-            c.append((-jnp.log1p(-p_i * jnp.exp(R))) / dt)
-            R += c[-1] * dt
+            denom = jnp.maximum(jnp.exp(-R) - p_i, eps)
+            c_i = (-R - jnp.log(denom)) / dt
+            c.append(c_i)
+            R += c_i * dt
         # coalescent rate in last period is not identifiable from this data.
         c.append(c[-1])
         return cls(t=jnp.array(t), c=jnp.array(c))
@@ -204,12 +206,23 @@ class SizeHistory(NamedTuple):
         R = self.R
 
         def f(x):
-            return -np.expm1(-R(x)) - q
+            return -jnp.expm1(-R(x)) - q
 
+        def g(_, tup):
+            a, b = tup
+            c = (a + b) / 2
+            cond = f(c) > 0
+            a = jnp.where(cond, a, c)
+            b = jnp.where(cond, c, b)
+            return (a, b)
+
+        a = 0.0
         b = self.t[-1]
-        while -np.expm1(-R(b)) < q:
-            b *= 2
-        return root_scalar(f, bracket=(0, b)).root
+        # find b such that f(b) > 0
+        b = lax.while_loop(lambda x: f(x) <= 0, lambda x: x * 1.1, b)
+        # run a few bisection steps
+        a, b = lax.fori_loop(0, 20, g, (a, b))
+        return (a + b) / 2.0
 
     def balance(self) -> "SizeHistory":
         "returns the balance of the coalescence density at time t"
@@ -256,16 +269,27 @@ class SizeHistory(NamedTuple):
         R2 = eta2.R
         return _hellinger(R1, R2)
 
-    def l2(self, other: "SizeHistory", t_max) -> float:
+    def squared_l2(self, other: "SizeHistory", t_max, log: bool = False) -> float:
         "L2 distance between N_self(t) and N_other(t) up to time t_max."
-        t = np.array([sorted(set(self.t.tolist()) | set(other.t.tolist()) | {t_max})])
-        t = t[t <= t_max]
+        t = jnp.concatenate([self.t, other.t])
+        t = jnp.append(t, t_max)
+        t = jnp.sort(t)
+        if log:
+            f = jnp.log
+            g = jnp.exp
+            t = f(t[2:])  # omit zero entries
+        else:
+            f = g = lambda x: x
         # both Ne functions will be constant on the unioned intervals, so we can call
         # them at the interval midpoint to get the correct value
         tmid = (t[:-1] + t[1:]) / 2.0
-        Ne1, Ne2 = (f(tmid, Ne=True) for f in (self, other))
-        s = (Ne1 - Ne2) ** 2 * jnp.diff(t)
-        return jnp.sqrt(s.sum())
+        Ne1, Ne2 = (h(g(tmid), Ne=True) for h in (self, other))
+        s = (f(Ne1) - f(Ne2)) ** 2 * jnp.diff(t)
+        s *= t[1:] <= f(t_max)
+        return s.sum()
+
+    def l2(self, other: "SizeHistory", t_max: float, log: bool = False) -> float:
+        return jnp.sqrt(self.squared_l2(other, t_max, log))
 
     @classmethod
     def from_demography(cls, demo: msprime.Demography) -> "SizeHistory":
