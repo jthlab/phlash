@@ -39,7 +39,6 @@ class PhlashMCMCParams(MCMCParams):
         pattern_str: str,
         t1: float,
         tM: float,
-        pi: jax.Array,
         theta: float,
         rho: float,
         window_size: int = 100,
@@ -49,7 +48,6 @@ class PhlashMCMCParams(MCMCParams):
             pattern_str=pattern_str,
             t1=t1,
             tM=tM,
-            pi=pi,
             theta=theta,
             rho=rho,
             window_size=window_size,
@@ -104,9 +102,7 @@ def log_density(
     Returns:
         The log density, or negative infinity where the result is not finite.
     """
-    mcp = replace(
-        mcp, t_tr=lax.stop_gradient(mcp.t_tr), pi_tr=lax.stop_gradient(mcp.pi_tr)
-    )
+    mcp = replace(mcp, t_tr=lax.stop_gradient(mcp.t_tr))
     dm = mcp.to_dm()
     l1 = log_prior(mcp, alpha, beta)
 
@@ -127,8 +123,8 @@ def log_density(
 
     # ld contribution, if present
     l4 = 0.0
-    if ld is not None:
-        l4 = _loglik_ld(dm, mcp.N0, ld)
+    # if ld is not None:
+    #     l4 = _loglik_ld(dm, mcp.N0, ld)
 
     lls = jnp.array([l1, l2, l3, l4])
 

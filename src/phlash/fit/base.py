@@ -17,7 +17,7 @@ import phlash.model
 from phlash.afs import default_afs_transform
 from phlash.kernel import get_kernel
 from phlash.model import PhlashMCMCParams
-from phlash.size_history import DemographicModel
+from phlash.size_history import DemographicModel, SizeHistory
 from phlash.util import Pattern, tree_unstack
 
 
@@ -198,7 +198,6 @@ class BaseFitter:
                 rho=rho,
                 t1=t1,
                 tM=tM,
-                pi=jnp.ones(M - 2) / (M - 2),
                 c=jnp.ones(M),
                 theta=theta,
                 N0=N0,
@@ -217,22 +216,18 @@ class BaseFitter:
                 PhlashMCMCParams.from_linear,
                 pattern_str="16*1",
                 rho=init0.rho,
-                pi=init0.pi,
                 t1=init0.t1,
                 tM=init0.tM,
                 theta=init0.theta,
                 N0=init0.N0,
                 window_size=self.window_size,
             )
-            init = fl(c=jnp.ones(16))
+            init = fl(c=jnp.ones_like(init0.c))
             x0, unravel = ravel_pytree(init)
             sd = self.options.get("sigma", 0.5)
             key1, key2 = jax.random.split(key)
             x1 = x0 + sd * jax.random.normal(key1, shape=x0.shape)
             init = unravel(x1)
-            # pi = jax.random.dirichlet(key2, jnp.ones(len(init.pi)))
-            pi = jnp.ones(len(init.pi)) / len(init.pi)
-            init = replace(init, pi_tr=jnp.log(pi))
             return init
 
         keys = jax.random.split(self.get_key(), self.num_particles)
@@ -580,26 +575,27 @@ class PhlashFitter(BaseFitter):
         old_st = self.state
         new_st = super()._optimization_step(inds, **kwargs)
         if not self.options.get("learn_t", False):
-
-            @vmap
-            def f(mcp, old_mcp, key):
-                mcp = replace(mcp, pi_tr=old_mcp.pi_tr)
-                dm = mcp.to_dm()
-                n = self.num_samples
-                r = n * (n - 1) / 2.0
-                eta_c = dm.eta._replace(c=r * dm.eta.c)
-                key1, key2 = jax.random.split(key)
-                q0 = jax.random.uniform(key1, minval=0.02, maxval=0.05)
-                t0 = eta_c.quantile(q0)
-                q1 = jax.random.uniform(key2, minval=0.95, maxval=0.99)
-                t1 = dm.eta.quantile(q1)
-                t_new = jnp.array([t0, t1 - t0])
-                t_tr_new = jnp.log(t_new)
-                return replace(mcp, t_tr=t_tr_new)
-
-            keys = jax.random.split(self.get_key(), self.num_particles)
-            new_particles = f(new_st.particles, old_st.particles, keys)
+            new_particles = replace(new_st.particles, t_tr=old_st.particles.t_tr)
             new_st = new_st._replace(particles=new_particles)
+
+        # compute ld averaged across all particles because it's slow :-)
+        @jax.jit
+        @jax.value_and_grad
+        def f(ps):
+            t1 = ps.t1.min()
+            tM = ps.tM.max()
+            t = jnp.geomspace(t1, tM, 100)
+            cs = vmap(lambda p: p.to_dm().eta(t))(ps)
+            eta = SizeHistory(t=t, c=cs.mean(0))
+            dm = DemographicModel(eta=eta, theta=new_st.particles.theta, rho=None)
+            N0 = ps.N0
+            return phlash.model._loglik_ld(dm, N0, self.ld)
+
+        f, df = f(new_st.particles)
+        M = abs(df.c_tr).max()
+        c_tr_prime = new_st.particles.c_tr + 0.1 * df.c_tr / M
+        new_particles = replace(new_st.particles, c_tr=c_tr_prime)
+        new_st = new_st._replace(particles=new_particles)
         return new_st
 
 
