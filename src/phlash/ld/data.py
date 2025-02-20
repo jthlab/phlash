@@ -10,6 +10,7 @@ import numpy as np
 import tqdm.auto as tqdm
 
 import phlash.ld.stats
+import phlash.util
 
 
 class LdStats(NamedTuple):
@@ -27,12 +28,11 @@ class LdStats(NamedTuple):
         if isinstance(key, int):
             key = jax.random.PRNGKey(key)
         # convert to stacked pytree
-        lds = jnp.array(lds)
-        nan = jnp.isnan(lds).any(axis=1)
-        lds = lds[~nan]
         N = len(lds)
+        lds = phlash.util.tree_stack(lds).norm().T
+        assert lds.shape == (N, 2)
         reps = jax.random.choice(key, lds, shape=(B, N), replace=True)
-        assert reps.shape == (B, N, 2)  # Dz / pi2, D2 / pi2
+        assert reps.shape == (B, N, 2)  # D2 / pi2, Dz / pi2
         Sigma_boot = jnp.cov(reps.mean(1), rowvar=False)
         return dict(mu=jnp.mean(lds, axis=0), Sigma=Sigma_boot)
 
@@ -81,7 +81,7 @@ def calc_ld(
             ld = f.result()
             if ld is not None:
                 k = futs[f]
-                ret.setdefault(k, []).append(ld.norm())
+                ret.setdefault(k, []).append(ld)
         return ret
 
 
@@ -90,8 +90,7 @@ def _helper(genotypes, genetic_pos, a, b, u, v) -> LdStats:
     ret = np.zeros(4)
     counts = np.zeros(9)
     _compute_stats(genotypes, genetic_pos, a, b, u, v, counts, ret)
-    d = dict(zip(["D2", "Dz", "pi2"], ret[:3]))
-    return LdStats(**d)
+    return LdStats(D2=ret[0], Dz=ret[1], pi2=ret[2])
 
 
 @numba.jit(nogil=True, nopython=True)

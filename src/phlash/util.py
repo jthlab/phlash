@@ -6,8 +6,6 @@ import numpy as np
 import scienceplots  # noqa: F401
 from scipy.interpolate import PPoly
 
-import phlash.size_history
-
 
 class Pattern:
     """Class for parsing PSMC-style pattern strings."""
@@ -71,7 +69,7 @@ def invert_cpwli(R: PPoly):
 
 
 def plot_posterior(
-    dms: list["phlash.size_history.DemographicModel"],
+    dms: list["phlash.size_history.DemographicModel"],  # noqa: F821
     ax: "matplotlib.axes.Axes" = None,
     credible_width: float = 0.95,
     **kwargs,
@@ -99,9 +97,7 @@ def plot_posterior(
     t1 = kwargs.pop("t1", t1)
     tM = kwargs.pop("tM", tM)
     t = jnp.geomspace(t1, tM, 1000)
-    Ne = jax.vmap(phlash.size_history.SizeHistory.__call__, (0, None, None))(
-        dms.eta, t, True
-    )
+    Ne = jax.vmap(dms.eta.__class__.__call__, (0, None, None))(dms.eta, t, True)
     m = jnp.median(Ne, axis=0)
     ax.plot(t, m, **kwargs)
     if credible_width is not None:
