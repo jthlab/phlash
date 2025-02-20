@@ -123,8 +123,8 @@ def log_density(
 
     # ld contribution, if present
     l4 = 0.0
-    # if ld is not None:
-    #     l4 = _loglik_ld(dm, mcp.N0, ld)
+    if ld is not None:
+        l4 = _loglik_ld(dm, mcp.N0, ld)
 
     lls = jnp.array([l1, l2, l3, l4])
 
@@ -146,7 +146,7 @@ def _loglik_afs(dm, afs, afs_transform):
     return ll
 
 
-def _loglik_ld(dm, N0, ld):
+def _loglik_ld(dm, N0, ld, full: bool = False):
     @vmap
     def f(r):
         dmr = dm.rescale(dm.theta / 4 / N0)
@@ -167,4 +167,6 @@ def _loglik_ld(dm, N0, ld):
     e = (eld[:-1] + eld[1:]) / 2
     lls = g(d, e)
     # jax.debug.print("l4s:{}", l4s)
-    return lls.sum()
+    if not full:
+        lls = lls.sum()
+    return lls

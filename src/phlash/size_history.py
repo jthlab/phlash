@@ -157,10 +157,10 @@ class SizeHistory(NamedTuple):
             The function value at each point x.
         """
         i = jnp.searchsorted(jnp.append(self.t, jnp.inf), x, "right") - 1
+        ret = self.c[i]
         if Ne:
-            return 1.0 / 2.0 / self.c[i]
-        return self.c[i]
-        # return self.to_pp()(x)
+            ret = 1.0 / 2.0 / ret
+        return ret
 
     def density(self, c: float = 1.0) -> Callable[[float], float]:
         R = self.R

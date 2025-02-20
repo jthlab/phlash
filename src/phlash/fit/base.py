@@ -17,7 +17,7 @@ import phlash.model
 from phlash.afs import default_afs_transform
 from phlash.kernel import get_kernel
 from phlash.model import PhlashMCMCParams
-from phlash.size_history import DemographicModel, SizeHistory
+from phlash.size_history import DemographicModel
 from phlash.util import Pattern, tree_unstack
 
 
@@ -577,25 +577,6 @@ class PhlashFitter(BaseFitter):
         if not self.options.get("learn_t", False):
             new_particles = replace(new_st.particles, t_tr=old_st.particles.t_tr)
             new_st = new_st._replace(particles=new_particles)
-
-        # compute ld averaged across all particles because it's slow :-)
-        @jax.jit
-        @jax.value_and_grad
-        def f(ps):
-            t1 = ps.t1.min()
-            tM = ps.tM.max()
-            t = jnp.geomspace(t1, tM, 100)
-            cs = vmap(lambda p: p.to_dm().eta(t))(ps)
-            eta = SizeHistory(t=t, c=cs.mean(0))
-            dm = DemographicModel(eta=eta, theta=new_st.particles.theta, rho=None)
-            N0 = ps.N0
-            return phlash.model._loglik_ld(dm, N0, self.ld)
-
-        f, df = f(new_st.particles)
-        M = abs(df.c_tr).max()
-        c_tr_prime = new_st.particles.c_tr + 0.1 * df.c_tr / M
-        new_particles = replace(new_st.particles, c_tr=c_tr_prime)
-        new_st = new_st._replace(particles=new_particles)
         return new_st
 
 
