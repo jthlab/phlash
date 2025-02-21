@@ -235,7 +235,7 @@ class TreeSequenceContig(Contig):
             bp = np.append(bp, self.L)
         mid = (bp[:-1] + bp[1:]) / 2.0
         unmasked = [bool(tr[m]) for m in mid]
-        nodes_flat = [x for t in self._nodes for x in t]
+        nodes_flat = list({x for t in self._nodes for x in t})
         afs = self.ts.allele_frequency_spectrum(
             sample_sets=[nodes_flat], windows=bp, polarised=True, span_normalise=False
         )[unmasked].sum(0)[1:-1]
@@ -258,7 +258,8 @@ def _read_ts(
     window_size: int,
     progress: bool = False,
 ) -> np.ndarray:
-    nodes_flat = [x for t in nodes for x in t]
+    nodes_flat = list({x for t in nodes for x in t})
+    node_inds = np.array([[nodes_flat.index(x) for x in t] for t in nodes])
     N = len(nodes)
     L = int(np.ceil(ts.get_sequence_length() / window_size))
     G = np.zeros([N, L], dtype=np.int8)
@@ -269,7 +270,7 @@ def _read_ts(
     ) as pbar:
         pbar.set_description("Reading tree sequence")
         for v in pbar:
-            g = v.genotypes.reshape(-1, 2)
+            g = v.genotypes[node_inds]
             ell = int(v.position / window_size)
             G[:, ell] += g[:, 0] != g[:, 1]
     return G
