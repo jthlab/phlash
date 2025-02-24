@@ -1,7 +1,11 @@
+import itertools as it
+
+import jax
 import numpy as np
+from scipy.integrate import quad
 from scipy.linalg import expm
 
-from phlash.transition import _expQ, transition_matrix
+from phlash.transition import _expQ, q_s, transition_matrix
 
 
 def _Q(r, c, n):
@@ -29,3 +33,15 @@ def test_transition(dm):
         M = transition_matrix(dm, n)
         assert np.all(M >= 0.0)
         np.testing.assert_allclose(M.sum(1), 1.0)
+
+
+def test_qts_quad(random_eta, rng):
+    eta = random_eta()
+    s, t = rng.uniform(0.0, 2 * eta.t[-1], size=2)
+    q, p_t_eq_s = q_s(eta=eta, s=s, r=1e-6)
+    q = jax.jit(q)
+
+    times = sorted([0.0, t, s, eta.t[-1]])
+    intg = sum(quad(q, a, b, points=eta.t[1:-1])[0] for a, b in it.pairwise(times))
+    intg += quad(q, times[-1], np.inf)[0]
+    np.testing.assert_allclose(intg + p_t_eq_s, 1.0, atol=1e-5)
