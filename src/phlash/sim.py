@@ -186,6 +186,8 @@ def _simulate(
 def _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld) -> Contig | str:
     engine = stdpopsim.get_engine("msprime")
     ts = engine.simulate(model, chrom, pop_dict, seed=seed)
+    if os.environ.get("PHLASH_SIM_RETURN_TS"):
+        return ts
     if return_vcf:
         if isinstance(return_vcf, str):
             f = partial(ts.write_vcf, open(return_vcf, "w"))
