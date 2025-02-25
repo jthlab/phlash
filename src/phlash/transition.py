@@ -110,9 +110,17 @@ def q_s(*, eta, s, r) -> tuple[Callable[[float], float], float]:
         i = jnp.searchsorted(t_aug, s, side="right")
         c_aug = eta(t_aug)
         dt = jnp.diff(t_aug)
-        P = jax.vmap(_expQ, (0, 0, None))(dt * r, dt * c_aug[:-1], 2)
-        Pcum = jax.lax.associative_scan(jnp.matmul, P)
-        return Pcum[i - 1]
+
+        # takes too much memory
+        # P = jax.vmap(_expQ, (0, 0, None))(dt * r, dt * c_aug[:-1], 2)
+        # Pcum = jax.lax.associative_scan(jnp.matmul, P)
+        # return Pcum[i - 1]
+        def f(P0, tup):
+            j, dt, c = tup
+            P = jnp.where(j > i, jnp.eye(3), _expQ(dt * r, dt * c, 2))
+            return P0 @ P, None
+
+        return jax.lax.scan(f, jnp.eye(3), (jnp.arange(len(dt)), dt, c_aug[:-1]))[0]
 
     R = eta.R
     P_s = P(s)

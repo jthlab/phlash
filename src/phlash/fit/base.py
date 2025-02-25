@@ -40,15 +40,6 @@ class BaseFitter:
         Initialize the fitting procedure with data and configuration options.
         """
         self.data = data
-
-        # FIXME: assumes all datasets have the same number of samples
-        try:
-            self.num_samples = next(
-                d.hets.shape[0] for d in self.data if d.hets is not None
-            )
-        except StopIteration:
-            raise ValueError("No data found")
-
         self.test_data = test_data
         self.options = options
         self.M = options.get("M", 16)
@@ -94,7 +85,7 @@ class BaseFitter:
 
         # process afs and ld first, because init_chunks destroys data!
         self.afs = phlash.data.init_afs(self.data)
-        self.ld = phlash.data.init_ld(self.data)
+        # self.ld = phlash.data.init_ld(self.data)
 
         (self.chunks, self.populations, self.pop_indices) = phlash.data.init_chunks(
             self.data, self.window_size, overlap, chunk_size, max_samples, num_workers
@@ -161,7 +152,7 @@ class BaseFitter:
 
         self.elpd = jit(elpd)
 
-    def _initialize_model(self):
+    def initialize_model(self):
         """
         Initialize the MCMC model parameters and optimizer.
         """
@@ -209,7 +200,7 @@ class BaseFitter:
 
     def initialize_particles(self):
         # initialized raveled representation of state
-        init0 = self._initialize_model()
+        init0 = self.initialize_model()
 
         def f(key):
             fl = functools.partial(
@@ -242,6 +233,18 @@ class BaseFitter:
             inds0 = jax.random.choice(self.get_key(), N, shape=(self.minibatch_size,))
             inds1 = jax.random.choice(self.get_key(), C, shape=(self.minibatch_size,))
             yield (inds0, inds1)
+
+    def optimization_step(self, data, **kwargs):
+        """
+        Perform a single optimization step.
+        """
+        # Placeholder for actual optimization logic.
+        old_st = self.state
+        new_st = self.step(self.state, data=data, **kwargs)
+        if not self.options.get("learn_t", False):
+            new_particles = replace(new_st.particles, t_tr=old_st.particles.t_tr)
+            new_st = new_st._replace(particles=new_particles)
+        return new_st
 
     def initialize_callback(self):
         # build the plot callback
@@ -288,31 +291,19 @@ class BaseFitter:
         # to have unbiased gradient estimates, need to pre-multiply the chunk term by
         # ratio
         weights = self.options.get("weights", (None,) * 4)
-        default_weights = (1.0, self.num_chunks / self.minibatch_size, 1.0, 1.0)
+        default_weights = (1.0, self.sequence_length / self.minibatch_size, 1.0, 1.0)
         weights = self.weights = jnp.array(
             [dw if w is None else w for dw, w in zip(default_weights, weights)]
         )
         logger.debug("weights: {}", weights)
 
         kw = dict(
-            kern=self.train_kern,
             weights=weights,
             alpha=self.options.get("alpha", 1e-5),
             beta=self.options.get("beta", 1e-5),
         )
 
         logger.info("Starting optimization...")
-
-        # with tqdm.trange(
-        #     100, disable=not progress, desc="Pre-fitting"
-        # ) as self.pbar:
-        #     for i in self.pbar:
-        #         self.state = jax.tree.map(
-        #             lambda a: jnp.astype(a, jnp.float64), self.state
-        #         )
-        #         self.state = self._optimization_step(next(di), **kw)
-        #         self.callback(self.state)
-        #         _particles = self.state.particles
 
         kw["afs"] = self.afs
         kw["ld"] = self.ld
@@ -328,7 +319,7 @@ class BaseFitter:
                 self.state = jax.tree.map(
                     lambda a: jnp.astype(a, jnp.float64), self.state
                 )
-                self.state = self._optimization_step(next(di), **kw)
+                self.state = self.optimization_step(next(di), **kw)
                 if i == 100:
                     global _debug
                     _debug = True
@@ -401,41 +392,7 @@ class BaseFitter:
         self.state = self.svgd.init(self.particles)
         self.step = jit(self.svgd.step, static_argnames=["kern"])
 
-    def log_density(self, particle, **kwargs):
-        """
-        Compute the log density.
-        """
-
-        @vmap
-        def f(mcp, inds, warmup):
-            return phlash.model.log_density(
-                mcp=mcp,
-                weights=kwargs["weights"],
-                inds=inds,
-                warmup=warmup,
-                ld=kwargs.get("ld"),
-                afs_transform=self.afs_transform,
-                afs=kwargs.get("afs"),
-                kern=kwargs["kern"],
-                alpha=self.options.get("alpha", 0.0),
-                beta=self.options.get("beta", 0.0),
-                _components=kwargs.get("_components"),
-            )
-
-        mcps = vmap(lambda _: particle)(kwargs["inds"])
-        return f(mcps, kwargs["inds"], kwargs["warmup"]).sum(0)
-
-    def _optimization_step(self, inds, **kwargs):
-        """
-        Perform a single optimization step.
-        """
-        # Placeholder for actual optimization logic.
-        kwargs["inds"] = inds
-        kwargs["warmup"] = self.warmup_chunks[inds]
-        new_st = self.step(self.state, **kwargs)
-        return new_st
-
-    def _calculate_watterson(self):
+    def calculate_watterson(self):
         """
         Compute Watterson's estimator for mutation rate.
         """
@@ -447,8 +404,16 @@ class BaseFitter:
 
     ## some useful properties
     @property
+    def num_samples(self):
+        return None
+
+    @functools.cached_property
     def theta(self):
-        return self.options.get("theta", self._calculate_watterson())
+        return self.options.get("theta", self.calculate_watterson())
+
+    @property
+    def N0(self):
+        return self.theta / 4 / self.mutation_rate
 
     @property
     def window_size(self):
@@ -484,6 +449,13 @@ class BaseFitter:
         return s[0] * s[1]
 
     @property
+    def sequence_length(self):
+        """
+        Get the sequence length.
+        """
+        return self.chunks.shape[2]
+
+    @property
     def minibatch_size(self):
         """
         Get the minibatch size.
@@ -513,6 +485,10 @@ def l2_kernel(p1: PhlashMCMCParams, p2: PhlashMCMCParams, length_scale=1.0):
 
 
 class PhlashFitter(BaseFitter):
+    @property
+    def num_samples(self):
+        return self.data[0].hets.shape[0]
+
     def load_data(self):
         # in the one population case, all the chunks are exchangeable, so we can just
         # merge all the chunks
@@ -553,31 +529,43 @@ class PhlashFitter(BaseFitter):
             )
         logger.debug("after merging: chunks.shape={}", self.chunks.shape)
 
-    def initialize_optimizer(self):
-        """
-        Initialize the optimizer.
-        """
-        lr = self.options.get("learning_rate", 1e-2)
-        opt = optax.nadam(learning_rate=lr)
-        # df = jit(grad(self.log_density), static_argnames=["kern"])
-        df = grad(self.log_density)
-        self.svgd = blackjax.svgd(df, opt)
-        self.state = self.svgd.init(self.particles)
-        self.step = jit(self.svgd.step, static_argnames=["kern"])
-        # self.step = self.svgd.step
-
-    def _optimization_step(self, inds, **kwargs):
+    def optimization_step(self, data, **kwargs):
         """
         Perform a single optimization step.
         """
         # Placeholder for actual optimization logic.
+        inds = data
+        kwargs["inds"] = inds
+        kwargs["kern"] = self.train_kern
+        kwargs["warmup"] = self.warmup_chunks[inds]
         kwargs["afs_transform"] = self.afs_transform
-        old_st = self.state
-        new_st = super()._optimization_step(inds, **kwargs)
-        if not self.options.get("learn_t", False):
-            new_particles = replace(new_st.particles, t_tr=old_st.particles.t_tr)
-            new_st = new_st._replace(particles=new_particles)
-        return new_st
+        return super().optimization_step(**kwargs)
+
+    def log_density(self, particle, **kwargs):
+        """
+        Compute the log density.
+        """
+
+        @vmap
+        def f(mcp, inds, warmup):
+            return phlash.model.log_density(
+                mcp=mcp,
+                weights=kwargs["weights"],
+                inds=inds,
+                warmup=warmup,
+                ld=kwargs.get("ld"),
+                afs_transform=self.afs_transform,
+                afs=kwargs.get("afs"),
+                kern=kwargs["kern"],
+                alpha=self.options.get("alpha", 0.0),
+                beta=self.options.get("beta", 0.0),
+                _components=kwargs.get("_components"),
+            )
+
+        inds = kwargs["inds"]
+        warmup = kwargs["warmup"]
+        mcps = vmap(lambda _: particle)(inds)
+        return f(mcps, inds, warmup).sum(0)
 
 
 # for post-mortem/debugging...
