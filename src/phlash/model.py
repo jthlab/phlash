@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass, replace
+from dataclasses import replace
 
 import jax
 import jax.numpy as jnp
@@ -9,53 +9,6 @@ from jaxtyping import Array, Float, Float64, Int8, Int64
 import phlash.hmm
 from phlash.ld.expected import expected_ld
 from phlash.params import MCMCParams
-
-
-@jax.tree_util.register_dataclass
-@dataclass
-class PhlashMCMCParams(MCMCParams):
-    c_tr: jax.Array
-
-    @property
-    def c(self):
-        return jnp.exp(self.c_tr)
-
-    @staticmethod
-    def cinv(c: jax.Array) -> jax.Array:
-        return jnp.log(c)
-
-    def to_dm(self) -> phlash.size_history.DemographicModel:
-        c = jnp.array(self.pattern.expand(self.c))
-        eta = phlash.size_history.SizeHistory(t=self.times, c=c)
-        assert eta.t.shape == eta.c.shape
-        return phlash.size_history.DemographicModel(
-            eta=eta, theta=self.theta, rho=self.rho
-        )
-
-    @classmethod
-    def from_linear(
-        cls,
-        c: jax.Array,
-        pattern_str: str,
-        t1: float,
-        tM: float,
-        theta: float,
-        rho: float,
-        window_size: int = 100,
-        N0: float = None,
-    ):
-        mcp = MCMCParams.from_linear(
-            pattern_str=pattern_str,
-            t1=t1,
-            tM=tM,
-            theta=theta,
-            rho=rho,
-            window_size=window_size,
-            N0=N0,
-        )
-
-        c_tr = cls.cinv(c)
-        return cls(c_tr=c_tr, **asdict(mcp))
 
 
 def log_prior(mcp: MCMCParams, alpha: float, beta: float) -> float:

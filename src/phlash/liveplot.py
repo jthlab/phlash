@@ -115,15 +115,15 @@ class _IPythonLivePlot:
 
             ys = vmap(f)(dms)
             Ne = 1 / 2 / ys
-            return jnp.quantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
+            Ne = jnp.where(jnp.isclose(ys, 0.0), jnp.nan, Ne)
+            return jnp.nanquantile(Ne, jnp.array([0.025, 0.5, 0.975]), axis=0)
 
         self._qtiles = jit(qtiles)
         self._fig.show(post_script=_js_update)
         self._handle = display(display_id=True)
 
     def __call__(self, dms: DemographicModel):
-        if self._x is None:
-            self._x = np.geomspace(dms.eta.t[:, 1].min(), dms.eta.t[:, -1].max(), 1000)
+        self._x = np.geomspace(dms.eta.t[:, 1].min(), dms.eta.t[:, -1].max(), 1000)
         q025, m, q975 = self._qtiles(dms)
         args = [a.tolist() for a in [self._x, m, q025, q975]] + [
             self._truth is not None

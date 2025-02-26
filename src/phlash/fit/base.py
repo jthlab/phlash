@@ -14,11 +14,10 @@ from loguru import logger
 
 import phlash.data
 import phlash.model
-from phlash.afs import default_afs_transform
 from phlash.kernel import get_kernel
-from phlash.model import PhlashMCMCParams
+from phlash.params import SinglePopMCMCParams
 from phlash.size_history import DemographicModel
-from phlash.util import Pattern, tree_unstack
+from phlash.util import tree_unstack
 
 
 def _check_jax_gpu():
@@ -180,12 +179,8 @@ class BaseFitter:
             assert t1 < tM
             logger.debug("t1={:g} tM={:f}", t1, tM)
             rho = self.options.get("rho_over_theta", 1.0) * theta
-            # this pattern is similar to the psmc default, but we have fewer params
-            # (16) to use, so are a little more conservative with parameter tying
-            pat = "16*1"
-            M = len(Pattern(pat))
-            init = PhlashMCMCParams.from_linear(
-                pattern_str=pat,
+            M = self.options.get("M", 16)
+            init = SinglePopMCMCParams.from_linear(
                 rho=rho,
                 t1=t1,
                 tM=tM,
@@ -194,7 +189,7 @@ class BaseFitter:
                 N0=N0,
                 window_size=self.window_size,
             )
-        assert isinstance(init, PhlashMCMCParams)
+        assert isinstance(init, SinglePopMCMCParams)
         self.init = init
         return init
 
@@ -204,8 +199,7 @@ class BaseFitter:
 
         def f(key):
             fl = functools.partial(
-                PhlashMCMCParams.from_linear,
-                pattern_str="16*1",
+                SinglePopMCMCParams.from_linear,
                 rho=init0.rho,
                 t1=init0.t1,
                 tM=init0.tM,
@@ -242,7 +236,8 @@ class BaseFitter:
         old_st = self.state
         new_st = self.step(self.state, data=data, **kwargs)
         if not self.options.get("learn_t", False):
-            new_particles = replace(new_st.particles, t_tr=old_st.particles.t_tr)
+            t_tr = old_st.particles.t_tr
+            new_particles = replace(new_st.particles, t_tr=t_tr)
             new_st = new_st._replace(particles=new_particles)
         return new_st
 
@@ -402,11 +397,6 @@ class BaseFitter:
         # this is fairly wrong if compositing many chunks together.
         return w[1] / w[0]
 
-    ## some useful properties
-    @property
-    def num_samples(self):
-        return None
-
     @functools.cached_property
     def theta(self):
         return self.options.get("theta", self.calculate_watterson())
@@ -476,103 +466,5 @@ class BaseFitter:
         return self.options.get("num_particles", 500)
 
 
-def l2_kernel(p1: PhlashMCMCParams, p2: PhlashMCMCParams, length_scale=1.0):
-    eta1 = p1.to_dm().eta
-    eta2 = p2.to_dm().eta
-    l2_2 = eta1.squared_l2(eta2, t_max=15.0, log=True)
-    ret = jnp.exp(-l2_2 / length_scale)
-    return ret
-
-
-class PhlashFitter(BaseFitter):
-    @property
-    def num_samples(self):
-        return self.data[0].hets.shape[0]
-
-    def load_data(self):
-        # in the one population case, all the chunks are exchangeable, so we can just
-        # merge all the chunks
-        super().load_data()
-        # convert afs to standard vector representation in the 1-pop case
-        daft = self.options.get("afs_transform", default_afs_transform)
-        if self.afs:
-            self.afs = {k: v.todense()[1:-1] for k, v in self.afs.items()}
-            self.afs_transform = {n: daft(self.afs[n]) for n in self.afs}
-            for n in self.afs:
-                logger.debug(
-                    "transformed afs[{}]:{}", n, self.afs_transform[n](self.afs[n])
-                )
-        else:
-            self.afs_transform = None
-        if self.test_afs:
-            self.test_afs = {k: v.todense()[1:-1] for k, v in self.test_afs.items()}
-            self.test_afs_transform = {n: daft(self.test_afs[n]) for n in self.test_afs}
-        else:
-            self.test_afs_transform = None
-
-        # massage the chunks
-        self.chunks = self.chunks.reshape(-1, *self.chunks.shape[2:])[:, None]
-        # if too many chunks, downsample so as not to use up all the gpu memory
-        if self.num_chunks > 5 * self.minibatch_size * self.niter:
-            # important: use numpy to do this _not_ jax. (jax will put it on the gpu
-            # which causes the very problem we are trying to solve.)
-            old_size = self.chunks.size
-            rng = np.random.default_rng(np.asarray(self.get_key()))
-            self.chunks = rng.choice(
-                self.chunks, size=(5 * self.minibatch_size * self.niter,), replace=False
-            )
-            gb = 1024**3
-            logger.debug(
-                "Downsampled chunks from {:.2f}Gb to {:.2f}Gb",
-                old_size / gb,
-                self.chunks.size / gb,
-            )
-        logger.debug("after merging: chunks.shape={}", self.chunks.shape)
-
-    def optimization_step(self, data, **kwargs):
-        """
-        Perform a single optimization step.
-        """
-        # Placeholder for actual optimization logic.
-        inds = data
-        kwargs["inds"] = inds
-        kwargs["kern"] = self.train_kern
-        kwargs["warmup"] = self.warmup_chunks[inds]
-        kwargs["afs_transform"] = self.afs_transform
-        return super().optimization_step(**kwargs)
-
-    def log_density(self, particle, **kwargs):
-        """
-        Compute the log density.
-        """
-
-        @vmap
-        def f(mcp, inds, warmup):
-            return phlash.model.log_density(
-                mcp=mcp,
-                weights=kwargs["weights"],
-                inds=inds,
-                warmup=warmup,
-                ld=kwargs.get("ld"),
-                afs_transform=self.afs_transform,
-                afs=kwargs.get("afs"),
-                kern=kwargs["kern"],
-                alpha=self.options.get("alpha", 0.0),
-                beta=self.options.get("beta", 0.0),
-                _components=kwargs.get("_components"),
-            )
-
-        inds = kwargs["inds"]
-        warmup = kwargs["warmup"]
-        mcps = vmap(lambda _: particle)(inds)
-        return f(mcps, inds, warmup).sum(0)
-
-
 # for post-mortem/debugging...
 _fitter = None
-
-
-def fit(data, test_data=None, **options):
-    global _fitter
-    _fitter = PhlashFitter(data, test_data, **options)
-    return _fitter.fit()

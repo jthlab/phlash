@@ -1,6 +1,6 @@
 "Different parameterizations needed for MCMC and HMM"
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import NamedTuple
 
 import jax
@@ -9,7 +9,6 @@ from jaxtyping import Array, Float
 
 import phlash.size_history
 import phlash.transition
-from phlash.util import Pattern
 
 
 class PSMCParams(NamedTuple):
@@ -54,7 +53,6 @@ def static_field(**kw):
 
 @dataclass(kw_only=True)
 class MCMCParams:
-    pattern_str: str = static_field()
     t_tr: jax.Array
     log_rho_over_theta: float
     theta: float = static_field()
@@ -66,28 +64,9 @@ class MCMCParams:
         dm = dm._replace(rho=self.window_size * dm.rho)
         return PSMCParams.from_dm(dm)
 
-    # @classmethod
-    # def default(cls, theta):
-    #     return cls.from_linear(
-    #         pattern = "14*1+1*2",
-    #         t1=1e-4,
-    #         tM=15.0,
-    #         log_rho_over_theta=0.,
-    #         theta=theta,
-    #         alpha=0.0,
-    #         beta=0.0,
-    #         window_size=100,
-    #         N0=1e4,
-    #     )
-
-    @property
-    def pattern(self) -> Pattern:
-        return Pattern(self.pattern_str)
-
     @classmethod
     def from_linear(
         cls,
-        pattern_str: str,
         t1: float,
         tM: float,
         theta: float,
@@ -98,7 +77,6 @@ class MCMCParams:
         dtM = tM - t1
         t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])
         return cls(
-            pattern_str=pattern_str,
             t_tr=t_tr,
             log_rho_over_theta=jnp.log(rho / theta),
             theta=theta,
@@ -124,7 +102,7 @@ class MCMCParams:
 
     @property
     def M(self):
-        return self.pattern.M
+        return len(self.c)
 
     @property
     def rho_over_theta(self):
@@ -141,3 +119,48 @@ class MCMCParams:
         dtM = t[..., 1]
         tM = t1 + dtM
         return t1, tM
+
+
+@jax.tree_util.register_dataclass
+@dataclass
+class SinglePopMCMCParams(MCMCParams):
+    c_tr: jax.Array
+
+    @property
+    def c(self):
+        return jnp.exp(self.c_tr)
+
+    @staticmethod
+    def cinv(c: jax.Array) -> jax.Array:
+        return jnp.log(c)
+
+    def to_dm(self) -> phlash.size_history.DemographicModel:
+        c = self.c
+        eta = phlash.size_history.SizeHistory(t=self.times, c=c)
+        assert eta.t.shape == eta.c.shape
+        return phlash.size_history.DemographicModel(
+            eta=eta, theta=self.theta, rho=self.rho
+        )
+
+    @classmethod
+    def from_linear(
+        cls,
+        c: jax.Array,
+        t1: float,
+        tM: float,
+        theta: float,
+        rho: float,
+        window_size: int = 100,
+        N0: float = None,
+    ):
+        mcp = MCMCParams.from_linear(
+            t1=t1,
+            tM=tM,
+            theta=theta,
+            rho=rho,
+            window_size=window_size,
+            N0=N0,
+        )
+
+        c_tr = cls.cinv(c)
+        return cls(c_tr=c_tr, **asdict(mcp))
