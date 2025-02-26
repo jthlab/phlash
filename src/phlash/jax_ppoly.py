@@ -56,11 +56,14 @@ class JaxPPoly(NamedTuple):
         Notes:
             Only works for piecewise constant rate functions.
         """
-        # ET = \int_0^inf exp(-R(t))
+        # ET = \int_0^t exp(-R(u)) du
         #    = \sum_{i=0}^{T - 1} \int_{t_i}^{t_{i+1}} exp(-R(t))
-        #    = \sum_{i=0}^{T - 1} \int_{t_i}^{t_{i+1}} exp(-I_i) exp[-a_i (t-t_i)] / a
+
+        #    = \sum_{i=0}^{T - 1} \int_{t_i}^{t_{i+1}} exp(-I_i) exp[-a_i (t-t_i)] / a,
+        #      if a != 0
         #    = \sum_{i=0}^{T - 1} exp(-I_i) (1 - exp(-a_i * dt_i) / a_i
-        #
+
+        #    = \sum_{i=0}^{T - 1} dt_i exp(-I_i), if a = 0
         tinf = jnp.isinf(t)
         t_safe = jnp.where(tinf, 1.0, t)
         assert self.c.ndim == 2
@@ -72,17 +75,22 @@ class JaxPPoly(NamedTuple):
         integrals = a[:-1] * dt
         z = jnp.zeros_like(a[:1])
         I = jnp.concatenate([z, jnp.cumsum(integrals)])  # noqa: E741
+        a0 = jnp.isclose(a, 0.0)
+        asafe = jnp.where(a0, 1.0, a)
         exp_integrals = jnp.concatenate(
             [
-                jnp.exp(-I[:-1] + const) * -jnp.expm1(-a[:-1] * dt) / a[:-1],
+                jnp.exp(-I[:-1] + const)
+                * jnp.where(a0[:-1], dt, -jnp.expm1(-asafe[:-1] * dt) / asafe[:-1]),
+                # if a[-1] = 0 then the integral diverges so don't worry about it.
                 jnp.exp(-I[-1:] + const) / a[-1:],
             ]
         )
         i = jnp.maximum(jnp.searchsorted(self.x, t_safe, side="right") - 1, 0)
         # c = jnp.exp(-I[i] + const) * -jnp.expm1(-a[i] * (t - self.x[i])) / a[i]
-        c = (
-            jnp.exp(-I[i] + const)
-            - jnp.exp(-(I[i] + a[i] * (t_safe - self.x[i])) + const)
-        ) / a[i]
+        c = jnp.exp(-I[i] + const) * jnp.where(
+            a0[i],
+            t_safe - self.x[i],
+            -jnp.expm1(-asafe[i] * (t_safe - self.x[i])) / asafe[i],
+        )
         mask = jnp.arange(len(self.x) - 1) < i
         return jnp.where(tinf, exp_integrals.sum(), (exp_integrals * mask).sum() + c)

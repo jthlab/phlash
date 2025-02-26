@@ -22,6 +22,8 @@ def fit(data: list[tskit.TreeSequence], test_data=None, **options):
 class TreeSeqFitter(BaseFitter):
     def __init__(self, data, test_data=None, **options):
         options.setdefault("minibatch_size", 5)
+        self.num_samples = data[0].num_samples
+
         super().__init__(data, test_data, **options)
 
         if test_data is not None:
@@ -39,10 +41,14 @@ class TreeSeqFitter(BaseFitter):
             for a in td:
                 a += [[1.0, -1.0]] * (M - len(a))
             td = np.array(td)
-            afs = ts.allele_frequency_spectrum(
-                mode="branch", span_normalise=True, polarised=False
-            )
-            self.test_data = {"data": td, "afs": {ts.num_samples: afs}}
+            afs = self._afs(ts)
+            self.test_data = {"data": td, "afs": {len(afs) - 1: afs}}
+
+    def _afs(self, ts):
+        kw = dict(mode="branch", span_normalise=True, polarised=False)
+        if "nodes" in self.options:
+            kw["sample_sets"] = [np.reshape(self.options["nodes"], -1)]
+        return ts.allele_frequency_spectrum(**kw)
 
     @property
     def sequence_length(self):
@@ -51,21 +57,16 @@ class TreeSeqFitter(BaseFitter):
         """
         return sum(ts.get_sequence_length() for ts in self.data)
 
-    @property
-    def num_samples(self):
-        return self.data[0].num_samples
-
     def setup_gpu_kernel(self):
         pass
 
     def load_data(self):
         self.afs = afs = {}
         for ts in self.data:
-            n = ts.num_samples
+            a = self._afs(ts)
+            n = len(a) - 1
             afs.setdefault(n, np.zeros(n + 1))
-            afs[n] += ts.allele_frequency_spectrum(
-                mode="branch", span_normalise=True, polarised=False
-            )
+            afs[n] += a
 
     def calculate_watterson(self):
         def f(ts):
@@ -118,6 +119,16 @@ class TreeSeqFitter(BaseFitter):
         bh = it.batched(helper(), self.minibatch_size)
         yield from map(np.array, bh)
 
+    # def initialize_model(self):
+    #     # initialized raveled representation of state
+    #     ts = np.array([
+    #         t.get_time(t.root)
+    #         for ts in self.data
+    #         for t in ts.trees()
+    #         ]) / 2 / self.N0
+    #     self.options.setdefault("tM", ts.max())
+    #     return super().initialize_model()
+
     def elpd(self, particles, weights, **kwargs):
         @jax.jit
         @jax.vmap
@@ -134,6 +145,8 @@ class TreeSeqFitter(BaseFitter):
         dm = particle.to_dm()
         r = dm.rho
         eta = dm.eta
+        # always some probability of coalescing in any interval, avoid nan
+        eta = eta._replace(c=jnp.maximum(eta.c, 1e-20))
         R = eta.R
         times = data[..., 0].reshape(-1)
         times = jnp.sort(times)
