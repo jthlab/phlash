@@ -37,7 +37,8 @@ dependencies = [
     "lineax>=0.0.7",
     "scikit-learn>=1.6.1",
     "seaborn>=0.13.2",
-    "george>=0.4.3"
+    "george>=0.4.3",
+    "momi3 @ git+https://github.com/jthlab/momi3@iicr"
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -120,5 +121,4 @@ dev = [
     "notebook<7",
     "pytest>=8.3.4",
     "jupytext>=1.16.6",
-    "momi3 @ git+https://github.com/jthlab/momi3@iicr",
 ]
