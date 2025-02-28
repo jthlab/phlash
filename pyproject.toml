@@ -68,11 +68,6 @@ includes = []
 [tool.pdm.version]
 source = "scm"
 
-[tool.pdm.dev-dependencies]
-dev = [
-    "-e file:///${PROJECT_ROOT}/../../momi3/momi3#egg=momi3",
-]
-
 [tool.isort]
 profile = "black"
 known_first_party = "phlash"
@@ -125,4 +120,5 @@ dev = [
     "notebook<7",
     "pytest>=8.3.4",
     "jupytext>=1.16.6",
+    "momi3 @ git+https://github.com/jthlab/momi3@iicr",
 ]

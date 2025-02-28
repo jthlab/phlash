@@ -5,7 +5,7 @@
 groups = ["default", "dev", "gpu"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:3f3c00d5d7a6013c40054655785351dd0c27722af4df9487406ea5bd1aad9bbd"
+content_hash = "sha256:f43326298b2f97cd919a71e9e0d76652aed0ba69da1f1642fb5602f421a134f4"
 
 [[metadata.targets]]
 requires_python = ">=3.11,<3.13"
@@ -1859,10 +1859,11 @@ files = [
 
 [[package]]
 name = "momi3"
-version = "0.1.dev175"
-requires_python = ">=3.10"
-editable = true
-path = "../../momi3/momi3"
+version = "0.1.dev178"
+requires_python = ">=3.11"
+git = "https://github.com/jthlab/momi3"
+ref = "iicr"
+revision = "71862c964dee43298d601279b3abd3416b5eee14"
 summary = "momi3 infers complex demographic history from the joint site frequency spectrum"
 groups = ["dev"]
 marker = "python_version >= \"3.11\" and python_version < \"3.13\""
@@ -1876,7 +1877,7 @@ dependencies = [
     "gmpy2>=2.1.5",
     "importlib-resources>=6.4.5",
     "jax-dataclasses>=1.6.0",
-    "jax[cuda12]>=0.4.35",
+    "jax[cuda12]>=0.5.0",
     "jaxopt>=0.8.3",
     "joblib>=1.4.0",
     "lineax>=0.0.7",
