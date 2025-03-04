@@ -54,7 +54,7 @@ class SizeHistory(NamedTuple):
         b.add_deme(deme_name, epochs=epochs[::-1])
         return b.resolve()
 
-    def draw(self, ax=None, density: bool = False, c: float = 1.0, **kwargs) -> None:
+    def draw(self, ax=None, density: bool = False, c: float = 1.0, style: bool = True, **kwargs) -> None:
         """Plot this size history onto provided/current axis.
 
         Args:
@@ -78,13 +78,14 @@ class SizeHistory(NamedTuple):
             kw["marker"] = "."
             ax.scatter(self.t[-1:], y[-1:], **kw)
             # some nice looking defaults
+            kwargs.setdefault("drawstyle", "steps-post")
+        ax.plot(x, y, **kwargs)
+        if style:
             ax.set_xscale("log")
             ax.set_yscale("log")
             ax.spines[["right", "top"]].set_visible(False)
             ax.set_xlabel("Generations")
             ax.set_ylabel("$N_e$")
-            kwargs.setdefault("drawstyle", "steps-post")
-        ax.plot(x, y, **kwargs)
 
     @classmethod
     def default(cls, K: int) -> "SizeHistory":
