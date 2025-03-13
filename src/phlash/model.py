@@ -90,6 +90,8 @@ def log_density(
 
 def _loglik_afs(dm, afs, afs_transform):
     ll = 0.0
+    if afs_transform is None:
+        afs_transform = {}
     for n in afs:
         assert len(n) == 1
         T = afs_transform.get(n, lambda a: a)

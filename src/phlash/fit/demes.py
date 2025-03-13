@@ -19,7 +19,7 @@ import phlash.model
 import phlash.params
 import phlash.util
 from phlash.data import Contig
-from phlash.model import PhlashMCMCParams
+from phlash.params import SinglePopMCMCParams
 
 from .base import BaseFitter
 
@@ -33,8 +33,8 @@ class DemesMCMCParams(phlash.params.MCMCParams):
     iicr: Callable[[dict[Path, float]], float] = field(metadata=dict(static=True))
     sfs: dict[tuple[int], Callable] = field(default=None, metadata=dict(static=True))
 
-    def bind(self, num_samples) -> PhlashMCMCParams:
-        t = self.times[self.pattern.left_endpoints()]
+    def bind(self, num_samples) -> SinglePopMCMCParams:
+        t = self.times
         c, s = vmap(
             lambda u: self.iicr(num_samples=num_samples, t=u, params=self.params)
         )(t)
@@ -44,9 +44,8 @@ class DemesMCMCParams(phlash.params.MCMCParams):
         # p = -jnp.diff(s)
         # eta = SizeHistory(t=t, c=c)
         # c = jnp.where(s < 1e-5, c, eta.c)
-        return PhlashMCMCParams.from_linear(
+        return SinglePopMCMCParams.from_linear(
             c=c,
-            pattern_str=self.pattern_str,
             t1=self.t1,
             tM=self.tM,
             theta=self.theta,
@@ -54,6 +53,10 @@ class DemesMCMCParams(phlash.params.MCMCParams):
             window_size=self.window_size,
             N0=self.N0,
         )
+
+    @property
+    def M(self):
+        return 16
 
     @property
     def params(self):
@@ -66,7 +69,6 @@ class DemesMCMCParams(phlash.params.MCMCParams):
         dtM = tM - t1
         t_tr = jnp.array([jnp.log(t1), jnp.log(dtM)])
         return cls(
-            pattern_str="16*1",
             t_tr=t_tr,
             log_rho_over_theta=0.0,
             theta=theta,
@@ -129,10 +131,10 @@ class DemesFitter(BaseFitter):
 
         super().__init__(data, test_data, **options)
 
-    def _initialize_model(self):
-        theta = self._calculate_watterson()
-        if "mutation_rate" in self.options:
-            N0 = theta / 4 / self.options["mutation_rate"]
+    def initialize_model(self):
+        theta = self.calculate_watterson()
+        if self.mutation_rate:
+            N0 = theta / 4 / self.mutation_rate
         else:
             d0 = self._g.demes[0]
             assert np.isinf(d0.start_time)
@@ -140,8 +142,7 @@ class DemesFitter(BaseFitter):
             assert e0.size_function == "constant"
             assert e0.start_size == e0.end_size
             N0 = e0.start_size
-
-        # rescale everything in terms of the ancestral population size
+        # rescale everything in terms of N0
         g = deepcopy(self._g)
         g = demes.Graph.fromdict(phlash.util.rescale_demography(g.asdict(), 2 * N0))
         self._g = g
@@ -154,6 +155,7 @@ class DemesFitter(BaseFitter):
             top_n = max((a.sum(), n) for n, a in self.afs.items())[1]
             # only use the top_n populations
             self.afs = {top_n: self.afs[top_n]}
+            self.afs_transform = self.test_afs_transform = None
             num_samples = dict(zip(self.populations, top_n))
             self._sfs = {tuple(top_n): m3.sfs(num_samples)}
         init = self.options.get("init")
@@ -163,7 +165,6 @@ class DemesFitter(BaseFitter):
             params = self._g.asdict()
             f, finv = self._iicr.reparameterize(self._paths)
             x0 = finv(params)
-            # the rate of mutation in phlash is theta/2
             init = DemesMCMCParams.default(
                 x=x0,
                 theta=theta,
@@ -173,53 +174,6 @@ class DemesFitter(BaseFitter):
                 populations=self.populations,
             )
             init.N0 = N0
-
-        return init
-
-        # quickly do maximum likelihood
-        inds = tuple(np.transpose(list(np.ndindex(self.chunks.shape[:2]))))
-        kw = {
-            "weights": np.array([1.0, 1.0, 1.0, 1.0]),
-            "kern": self.train_kern,
-            "afs": self.afs,
-            "warmup": self.warmup_chunks[inds],
-            "inds": inds,
-        }
-
-        @jax.jit
-        @jax.value_and_grad
-        def ll(x):
-            # we have to add a fake batch dimension to x to pretend that it's a batch
-            # over particles. this is needed to satisfy the gpu kernel code, which
-            # assumes that the input is a batch of particles.
-            xb = jax.tree.map(lambda a: a[None], x)
-
-            @vmap
-            def g(x):
-                return self.log_density(x, **kw)
-
-            return -g(xb).sum() / 8800.0
-
-        # import optax
-        # import optax.tree_utils as otu
-        # dll = grad(f)(init)
-        # norm = otu.tree_l2_norm(dll)
-
-        # def g(x):
-        #     return f(x) / norm
-        x0, unravel = jax.flatten_util.ravel_pytree(init)
-
-        def f(x):
-            p = unravel(x)
-            f, df = ll(p)
-            print(f"f:{f} df:{df}")
-            dff = jax.flatten_util.ravel_pytree(df)[0]
-            return float(f), np.array(dff, dtype=np.float64)
-
-        import scipy
-
-        res = scipy.optimize.minimize(f, x0, jac=True, method="BFGS")
-        init = unravel(res.x)
         return init
 
     def initialize_callback(self):
@@ -257,7 +211,7 @@ class DemesFitter(BaseFitter):
         N, C = self.chunks.shape[:2]
         assert self._count_indices.shape == (N,)
 
-    def log_density(self, particle, data, **kwargs):
+    def log_density(self, particle, **kwargs):
         """
         Compute the log density.
         """
@@ -267,7 +221,7 @@ class DemesFitter(BaseFitter):
             ns = dict(zip(particle.populations, counts))
             return particle.bind(num_samples=ns)
 
-        inds = data
+        inds = kwargs["inds"]
         ci = self._count_indices[inds[0]]
         pc = self._population_counts
         warmup = kwargs["warmup"]
@@ -303,6 +257,10 @@ class DemesFitter(BaseFitter):
         Perform a single optimization step.
         """
         # Placeholder for actual optimization logic.
+        inds = data
+        kwargs["inds"] = inds
+        kwargs["kern"] = self.train_kern
+        kwargs["warmup"] = self.warmup_chunks[inds]
         old_st = self.state
         new_st = super().optimization_step(data, **kwargs)
 
@@ -319,18 +277,29 @@ class DemesFitter(BaseFitter):
 
     def initialize_particles(self):
         # initialized raveled representation of state
-        init0 = self._initialize_model()
+        init0 = self.initialize_model()
 
         def f(key):
             x0, unravel = ravel_pytree(init0)
-            sd = self.options.get("sigma", 1.0)
             key1, key2 = jax.random.split(key)
-            x1 = x0 + sd * jax.random.normal(key1, shape=x0.shape)
+            x1 = x0 + self.sigma * jax.random.normal(key1, shape=x0.shape)
             init = unravel(x1)
             return init
 
         keys = jax.random.split(self.get_key(), self.options.get("num_particles", 500))
         self.particles = jax.vmap(f)(keys)
+
+    def _finalize(self, state):
+        def f(p):
+            d = self._g.asdict()
+            paths = p.f(p.params)
+            for path, val in paths.items():
+                set_path(d, path, val)
+            d = phlash.util.rescale_demography(d, 1 / 2 / p.N0)
+            return d
+
+        ps = phlash.util.tree_unstack(state.particles)
+        return list(map(f, ps))
 
 
 def fit_demes(
