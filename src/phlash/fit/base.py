@@ -209,9 +209,8 @@ class BaseFitter:
             )
             init = fl(c=jnp.ones_like(init0.c))
             x0, unravel = ravel_pytree(init)
-            sd = self.options.get("sigma", 0.5)
             key1, key2 = jax.random.split(key)
-            x1 = x0 + sd * jax.random.normal(key1, shape=x0.shape)
+            x1 = x0 + self.sigma * jax.random.normal(key1, shape=x0.shape)
             init = unravel(x1)
             return init
 
@@ -268,6 +267,9 @@ class BaseFitter:
         if self.mutation_rate:
             ret = vmap(DemographicModel.rescale, (0, None))(ret, self.mutation_rate)
         return ret
+
+    def _finalize(self, state):
+        return self._dms(state)
 
     def fit(self):
         """
@@ -328,7 +330,7 @@ class BaseFitter:
                 self.particles = _particles = self.state.particles
 
         logger.info("MCMC finished successfully")
-        return tree_unstack(self._dms(self.state))
+        return tree_unstack(self._finalize(self.state))
 
     def converged(self, i: int):
         # if there is a test set, check elpd() function for computing expected
@@ -464,6 +466,10 @@ class BaseFitter:
         Get the number of particles.
         """
         return self.options.get("num_particles", 500)
+
+    @property
+    def sigma(self):
+        return self.options.get("sigma", 0.5)
 
 
 # for post-mortem/debugging...

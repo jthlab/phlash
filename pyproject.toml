@@ -8,7 +8,7 @@ authors = [
 dependencies = [
     "blackjax<2.0.0,>=1.1.0",
     "intervaltree<4.0.0,>=3.1.0",
-    "jax>=0.4.35",
+    "jax>=0.5.0",
     "loguru<1.0.0,>=0.7.2",
     "matplotlib<4.0.0,>=3.8.2",
     "msprime>=1.3.2",
@@ -51,9 +51,10 @@ license = {text = "MIT"}
 
 [project.optional-dependencies]
 gpu = [
-    "jax[cuda12]>=0.4.35",
+    "jax[cuda12]>=0.5.0",
     "cuda-python<13,>=12.3",
     "nvidia-cuda-nvrtc-cu12>=12.3",
+    "momi3 @ git+https://github.com/jthlab/momi3@iicr[gpu]"
 ]
 
 [build-system]
