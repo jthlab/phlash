@@ -278,11 +278,12 @@ def _read_ts(
 
 
 class _VCFFile:
-    def __init__(self, file_path, samples: list[str]):
+    def __init__(self, file_path, samples: list[tuple[str, str]]):
         self.file_path = file_path
         self.samples = samples
         self.vcf = pysam.VariantFile(file_path)  # opens the VCF or BCF file
-        self.vcf.subset_samples(samples)
+        self.unique_samples = {x for s in samples for x in s}
+        self.vcf.subset_samples(self.unique_samples)
         self._contigs = {name: c.length for name, c in self.vcf.header.contigs.items()}
 
     @property
@@ -298,14 +299,26 @@ class _VCFFile:
         def variant_iterator():
             for record in self.vcf.fetch(**kwargs):
                 het = np.zeros(len(self.samples), dtype=np.int8)
-                nd = 0  # number of derived alleles
-                for i, sample in enumerate(self.samples):
-                    gt = record.samples[sample]["GT"]
-                    if gt is None or None in gt:
+                for i, (s1, s2) in enumerate(self.samples):
+                    gts = []
+                    for j, si in enumerate([s1, s2]):
+                        r = record.samples[si]["GT"]
+                        if r is None:
+                            gts.append(None)
+                            continue
+                        gts.append(r[j])
+                    if None in gts:
                         het[i] = -1
                     else:
-                        het[i] = gt[0] != gt[1]
-                    nd += sum([g != 0 and g is not None for g in gt])
+                        het[i] = gts[0] != gts[1]
+                nd = sum(
+                    [
+                        g != 0 and g is not None
+                        for r in record.samples.values()
+                        for g in r["GT"]
+                        if r is not None
+                    ]
+                )
                 yield {"pos": record.pos, "ref": record.ref, "nd": nd, "het": het}
 
         return variant_iterator()
@@ -323,7 +336,7 @@ class VcfContig(Contig):
     """
 
     vcf_file: str
-    samples: list[str]
+    samples: list[str | tuple[str, str]]
     contig: str
     interval: tuple[int, int]
     mask: list[tuple[int, int]] = None
@@ -362,19 +375,23 @@ class VcfContig(Contig):
                 )
             if self.interval[0] >= self.interval[1]:
                 raise ValueError("region must be an interval (a,b) with a < b")
-        if not all(isinstance(s, str) for s in self.samples):
-            raise ValueError(
-                "samples should be a list of (string) sample identifiers in the vcf"
-            )
         if len(self.samples) == 0:
             raise ValueError("no samples were provided")
-        diff = set(self.samples) - set(self._vcf.header.samples)
+        diff = self.unique_samples - set(self._vcf.header.samples)
         if diff:
             raise ValueError(f"the following samples were not found in the vcf: {diff}")
 
     @property
+    def expanded_samples(self):
+        return [(s, s) if isinstance(s, str) else s for s in self.samples]
+
+    @property
+    def unique_samples(self):
+        return {x for s in self.expanded_samples for x in s}
+
+    @property
     def _vcf(self):
-        return _VCFFile(self.vcf_file, self.samples)
+        return _VCFFile(self.vcf_file, self.expanded_samples)
 
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
         vcf = self._vcf
@@ -389,7 +406,7 @@ class VcfContig(Contig):
             kwargs = {}
         L = end - start + 1
         N = len(self.samples)
-        afs = np.zeros(2 * N + 1, dtype=np.int64)
+        afs = np.zeros(2 * len(self.unique_samples) + 1, dtype=np.int64)
         H = np.zeros([N, int(L / window_size), 2], dtype=np.int8)
         H[:, :, 0] = window_size
         for rec in self._vcf.fetch(**kwargs):
