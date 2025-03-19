@@ -45,13 +45,13 @@ def test_vcf():
         fn,
         contig="1",
         interval=(25_000_000, 26_000_000),
-        samples=["NA12878", "NA12889"],
+        samples=["NA12878", "NA12889", ("NA12878", "NA12889")],
     )
     d = vcf.get_data(100)
     H = d["het_matrix"]
-    assert H.shape == (2, 1_000_000 // 100, 2)
-    assert H[..., 0].sum() == 2_000_000
-    assert H[..., 1].sum() == 256
+    assert H.shape == (3, 1_000_000 // 100, 2)
+    assert H[..., 0].sum() == 3_000_000
+    assert H[..., 1].sum() == 380
     assert np.all(d["afs"] == [143, 60, 89])
 
 
