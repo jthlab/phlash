@@ -6,7 +6,7 @@ import jax.numpy as jnp
 from phlash.size_history import DemographicModel
 
 
-def _expQ(r, c, n):
+def expQ(r, c, n):
     # matrix exponential exp(Q) for Q =
     #     [
     #         [-r, r, 0.0],  # non-recombining/invisible recombined
@@ -51,7 +51,7 @@ def transition_matrix(dm: DemographicModel, n: int = 2) -> jax.Array:
     dt0 = jnp.isclose(dt_aug, 0.0)
     dt_safe = jnp.where(dt0, 1.0, dt_aug)
     cr = jnp.repeat(dm.eta.c, 2, axis=0)[:-1]
-    P = jax.vmap(_expQ, (0, 0, None))(2 * dt_safe * dm.rho, dt_aug * cr, n)
+    P = jax.vmap(expQ, (0, 0, None))(2 * dt_safe * dm.rho, dt_aug * cr, n)
     P = jnp.where(dt0[:, None, None], jnp.eye(3)[None], P)
     Pinf = jnp.array([[0.0, 0.0, 1.0]] * 3)
     P = jnp.concatenate([jnp.eye(3)[None], P, Pinf[None]], 0)
@@ -112,12 +112,12 @@ def q_s(*, eta, s, r) -> tuple[Callable[[float], float], float]:
         dt = jnp.diff(t_aug)
 
         # takes too much memory
-        # P = jax.vmap(_expQ, (0, 0, None))(dt * r, dt * c_aug[:-1], 2)
+        # P = jax.vmap(expQ, (0, 0, None))(dt * r, dt * c_aug[:-1], 2)
         # Pcum = jax.lax.associative_scan(jnp.matmul, P)
         # return Pcum[i - 1]
         def f(P0, tup):
             j, dt, c = tup
-            P = jnp.where(j > i, jnp.eye(3), _expQ(dt * r, dt * c, 2))
+            P = jnp.where(j > i, jnp.eye(3), expQ(dt * r, dt * c, 2))
             return P0 @ P, None
 
         return jax.lax.scan(f, jnp.eye(3), (jnp.arange(len(dt)), dt, c_aug[:-1]))[0]

@@ -11,7 +11,7 @@ from loguru import logger
 
 from ..afs import fold_transform
 from ..size_history import DemographicModel, SizeHistory
-from ..transition import _expQ
+from ..transition import expQ
 from .base import BaseFitter
 
 
@@ -180,7 +180,7 @@ def _log_density(particle, **kwargs):
 
     def eQ(dt, c):
         dt_safe = jnp.where(dt > 0.0, dt, 1.0)
-        ret = _expQ(dt_safe * r, dt_safe * c, 2)
+        ret = expQ(dt_safe * r, dt_safe * c, 2)
         return jnp.where(dt > 0.0, ret, jnp.eye(3))
 
     P = jax.vmap(eQ)(dt, cs[:-1])
