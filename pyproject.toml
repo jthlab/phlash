@@ -38,7 +38,8 @@ dependencies = [
     "scikit-learn>=1.6.1",
     "seaborn>=0.13.2",
     "george>=0.4.3",
-    "momi3 @ git+https://github.com/jthlab/momi3@iicr"
+    "momi3 @ git+https://github.com/jthlab/momi3@iicr",
+    "interpax>=0.3.8"
 ]
 requires-python = ">=3.11"
 readme = "README.md"

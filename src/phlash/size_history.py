@@ -8,8 +8,8 @@ import numpy as np
 import scipy
 from jax import jit, lax, vmap
 
-from phlash.jax_ppoly import JaxPPoly
 from phlash.memory import memory
+from phlash.ppoly import PPoly
 from phlash.util import Pattern
 
 
@@ -54,7 +54,14 @@ class SizeHistory(NamedTuple):
         b.add_deme(deme_name, epochs=epochs[::-1])
         return b.resolve()
 
-    def draw(self, ax=None, density: bool = False, c: float = 1.0, style: bool = True, **kwargs) -> None:
+    def draw(
+        self,
+        ax=None,
+        density: bool = False,
+        c: float = 1.0,
+        style: bool = True,
+        **kwargs,
+    ) -> None:
         """Plot this size history onto provided/current axis.
 
         Args:
@@ -123,8 +130,8 @@ class SizeHistory(NamedTuple):
     def K(self):
         return len(self.c)
 
-    def to_pp(self) -> JaxPPoly:
-        return JaxPPoly(c=jnp.array(self.c)[None], x=jnp.append(self.t, jnp.inf))
+    def to_pp(self) -> PPoly:
+        return PPoly(c=jnp.array(self.c)[None], x=jnp.append(self.t, jnp.inf))
 
     @property
     def R(self):
