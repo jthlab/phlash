@@ -6,16 +6,12 @@ jupyter:
       extension: .md
       format_name: markdown
       format_version: '1.3'
-      jupytext_version: 1.15.2
+      jupytext_version: 1.17.3
   kernelspec:
     display_name: Python 3 (ipykernel)
     language: python
     name: python3
 ---
-
-```python
-%load_ext nb_black
-```
 
 This document explains how to run <code>phlash</code>. Before doing so, please ensure that your system meets the [requirements](../README.md) and that you have installed the package.
 
@@ -29,8 +25,8 @@ If you are familiar with the PSMC software, you may find it helpful to know that
 If you already have .psmcfa files (generated using i.e. the `fq2psmcfa` utility), a convenience function is provided for reanalyzing them with `phlash`:
 
 ```python
-import phlash
-posterior_samples = phlash.psmc(['/path/to/file1.psmcfa', '/path/to/file2.psmcfa', ...])
+# import phlash
+# posterior_samples = phlash.psmc(['/path/to/file1.psmcfa', '/path/to/file2.psmcfa', ...])
 ```
 
 ## General usage guide
@@ -64,18 +60,19 @@ template = (
 )
 
 chr22_path = os.path.join(onekg_base, template.format(chrom="chr22"))
-chr22_c = phlash.contig(chr22_path, samples=["NA12878"], region="22:1-10000000")
+chr22_c = phlash.contig(chr22_path, samples=["NA12878"], region="22:5000000-30000000")
+chroms_1kg = [chr22_c]
 ```
 
 To load data from all the autosomes, simply repeat this command for each of them:
 
 ```python
-chroms_1kg = []
-for chrom in range(1, 23):
-    path = os.path.join(onekg_base, template.format(chrom=f"chr{chrom}"))
-    chroms_1kg.append(
-        phlash.contig(path, samples=["NA12878"], region=f"{chrom}:1-10000000")
-    )
+# chroms_1kg = []
+# for chrom in range(1, 23):
+#     path = os.path.join(onekg_base, template.format(chrom=f"chr{chrom}"))
+#     chroms_1kg.append(
+#         phlash.contig(path, samples=["NA12878"], region=f"{chrom}:1-10000000")
+#     )
 ```
 
 Notice that, to prevent inadvertent errors (such as the inclusion of telomeric regions into the analysis), the `samples=` and `region=` argument are required when loading VCF data. If you forget to provide them, the function will throw an error.
@@ -112,10 +109,10 @@ For use cases that are not covered here, you may directly import your own data u
 Estimation is performed using `phlash.fit()`. In the most basic use-case, it takes a list of contigs and fits the model:
 
 ```python
-results = phlash.fit(chroms_1kg)
+results = phlash.fit(chroms_1kg, mutation_rate=1.29e-8)
 ```
 
-The output of `fit()` is a list of `phlash.size_history.DemographicModel` classes. These are simple [named tuples](https://docs.python.org/3/library/collections.html#collections.namedtuple) with fields `theta`, `rho`, and `eta`. The latter is itself an instance of `phlash.size_history.SizeHistory`, which represents a piecewise-constant size history function.
+The output of `fit()` is a list of `phlash.size_history.DemographicModel` classes. These are just [named tuples](https://docs.python.org/3/library/collections.html#collections.namedtuple) with fields `theta`, `rho`, and `eta`. The latter is itself an instance of `phlash.size_history.SizeHistory`, which represents a piecewise-constant size history function.
 
 Since each `DemographicModel` is a valid posterior sample, posterior inference is easy: just examine the empirical distribution of whatever statistic you are interested in. For example, to plot the pointwise posterior median:
 

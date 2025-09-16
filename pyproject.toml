@@ -1,6 +1,6 @@
 [project]
 name = "phlash"
-version = "0.0.0"
+version = "1.0.6"
 description = "Bayesian inference of population size history from recombining sequence data."
 authors = [
     {name = "Jonathan Terhorst", email = "jonth@umich.edu"},
@@ -8,13 +8,13 @@ authors = [
 dependencies = [
     "blackjax<2.0.0,>=1.1.0",
     "intervaltree<4.0.0,>=3.1.0",
-    "jax>=0.4.25",
+    "jax>=0.4.25,<0.6.0",
     "loguru<1.0.0,>=0.7.2",
     "matplotlib<4.0.0,>=3.8.2",
     "msprime>=1.3.2",
     "numpy>1.25",
     "optax<1.0.0,>=0.1.9",
-    "plotly<6.0.0,>=5.18.0",
+    "plotly>=6",
     "scipy<2.0.0,>=1.12.0",
     "stdpopsim<1.0.0,>=0.2.0",
     "tqdm<5.0.0,>=4.66.1",
@@ -39,7 +39,7 @@ license = {text = "MIT"}
 
 [project.optional-dependencies]
 gpu = [
-    "jax[cuda12]>=0.4.25",
+    "jax[cuda12]>=0.4.25,<0.6.0",
     "cuda-python<13,>=12.3",
     "nvidia-cuda-nvrtc-cu12>=12.3",
 ]
@@ -55,3 +55,10 @@ markers = [
 
 [tool.ruff.lint]
 select = ["NPY201"]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
+    "jupytext>=1.17.3",
+    "notebook>=7.4.5",
+]
