@@ -61,4 +61,5 @@ dev = [
     "jupyter>=1.1.1",
     "jupytext>=1.17.3",
     "notebook>=7.4.5",
+    "pytest>=8.4.2",
 ]

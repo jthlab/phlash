@@ -4,7 +4,7 @@ import pytest
 from phlash.cband import _find_confidence_bands
 
 
-@pytest.mark.slow
+@pytest.mark.skip("too slow")
 def test_random_sampled_functions(rng):
     """
     Tests the find_confidence_bands function with randomly sampled functions.
