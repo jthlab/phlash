@@ -517,7 +517,8 @@ def init_mcmc_data(
     # this has to succeed, we can't have all the het matrices empty
     if all(ds.L is None for ds in data):
         raise ValueError("None of the contigs have a length")
-    chunk_size = int(min(0.2 * ds.L / window_size for ds in data if ds.L))
+    if chunk_size is None:
+        chunk_size = int(min(0.2 * ds.L / window_size for ds in data if ds.L))
     if chunk_size < 10 * overlap:
         logger.warning(
             "The chunk size is {}, which is less than 10 times the overlap ({}).",
