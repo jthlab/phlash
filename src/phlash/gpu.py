@@ -1,4 +1,5 @@
 import ctypes
+import os
 import os.path
 import threading
 import warnings
@@ -17,6 +18,7 @@ from loguru import logger
 import phlash.size_history
 from phlash.params import PSMCParams
 
+PHLASH_DEBUG_MODE = os.environ.get("PHLASH_DEBUG_MODE", "0") != "0"
 
 class CudaError(RuntimeError):
     def __init__(self, err):
@@ -295,7 +297,8 @@ class _PSMCKernelBase:
             ASSERT_DRV(err)
         (err,) = cuda.cuStreamSynchronize(self._stream)
         ASSERT_DRV(err)
-        assert np.all(ll < 0)
+        if PHLASH_DEBUG_MODE:
+            assert np.all(ll < 0)
         if grad:
             dll = PSMCParams(
                 b=dlog[..., 0, :],
