@@ -8,6 +8,8 @@ from phlash.hmm import psmc_ll
 from phlash.kernel import get_kernel
 from phlash.params import PSMCParams
 
+pytestmark = pytest.mark.gpu
+
 jax.config.update("jax_enable_x64", True)
 
 
