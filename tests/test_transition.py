@@ -35,8 +35,8 @@ def test_transition(dm):
         np.testing.assert_allclose(M.sum(1), 1.0)
 
 
-def test_qts_quad(random_eta, rng):
-    eta = random_eta()
+def test_qts_quad(dm, rng):
+    eta = dm.eta
     s, t = rng.uniform(0.0, 2 * eta.t[-1], size=2)
     q, p_t_eq_s = q_s(eta=eta, s=s, r=1e-6)
     q = jax.jit(q)
