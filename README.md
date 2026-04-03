@@ -39,6 +39,15 @@ $ pip3 install -U pip setuptools  # recent version of pip and setuptools are req
 ## Running the program
 See [notebooks/example.md](notebooks/example.md) for example code and usage instructions.
 
+## Input Data
+
+`phlash` now supports a single file-backed input format: VCZ, a Zarr store in sgkit's
+genotype dataset layout. VCF/BCF and tree-sequence inputs should be converted to VCZ
+before loading them into `phlash`.
+
+At the Python level, file-backed data loading goes through `phlash.contig(...)`, which
+expects a VCZ/Zarr path plus a region string like `chr1:1000-5000`.
+
 ## Troubleshooting / FAQ
 
 I (Jonathan) am happy to assist you with using phlash, as much as my time allows.

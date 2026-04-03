@@ -4,11 +4,12 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import as_completed
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
 import pysam
+import sgkit
 import tqdm.auto as tqdm
 import tskit
 import tszip
@@ -90,14 +91,19 @@ class Contig(ABC):
             return None
         return self.L * self.N
 
-    def to_raw(self, window_size: int) -> "RawContig":
-        """Convert to a RawContig.
+    def to_memory(self, window_size: int) -> "MemoryContig":
+        """Materialize this contig into an in-memory representation.
 
         Note:
             This method is useful for pickling a Contig where the get_data()
             step takes a long time to run.
         """
-        return RawContig(**self.get_data(window_size), window_size=window_size)
+        d = self.get_data(window_size)
+        return MemoryContig.from_data(
+            het_matrix=d["het_matrix"],
+            afs=d["afs"],
+            window_size=window_size,
+        )
 
     def to_chunked(
         self, overlap: int, chunk_size: int, window_size: int = 100
@@ -113,17 +119,33 @@ class Contig(ABC):
 
 
 @dataclass(frozen=True)
-class RawContig(Contig):
-    "A contig with pre-computed het matrix and afs."
+class MemoryContig(Contig):
+    "An in-memory contig backed either by arrays or by a tree sequence."
 
-    het_matrix: Int8[Array, "N L"]
-    afs: Int[Array, "n"]
-    window_size: int
+    het_matrix: Int8[Array, "N L"] | None = None
+    afs: Int[Array, "n"] | None = None
+    window_size: int | None = None
+    ts: tskit.TreeSequence | None = None
+    nodes: list[tuple[int, int]] | None = None
+    mask: list[tuple[int, int]] | None = None
+
+    @classmethod
+    def from_data(
+        cls,
+        het_matrix: Int8[Array, "N L"],
+        afs: Int[Array, "n"],
+        window_size: int,
+    ) -> "MemoryContig":
+        return cls(
+            het_matrix=np.asarray(het_matrix, dtype=np.int8),
+            afs=np.asarray(afs),
+            window_size=int(window_size),
+        )
 
     @classmethod
     def from_psmcfa_iter(
         cls, psmcfa_path: str, window_size: int
-    ) -> Iterable["RawContig"]:
+    ) -> Iterable["MemoryContig"]:
         """Construct a list of contigs from a PSMC FASTA (.psmcfa) file.
 
         Args:
@@ -144,56 +166,46 @@ class RawContig(Contig):
                 seq = np.array(record.sequence, dtype="c")
                 data = (seq == b"K").astype(np.int8)
                 data[seq == b"N"] = -1  # account for missing data
-                (L,) = data.shape
                 afs = np.ones(1)
-                yield cls(het_matrix=data[None], afs=afs, window_size=window_size)
+                yield cls.from_data(
+                    het_matrix=data[None],
+                    afs=afs,
+                    window_size=window_size,
+                )
 
-    @property
-    def N(self):
-        # the het matrix has one row per diploid pair, so the number of ploids
-        # is twice its first dimension.
-        if self.het_matrix is None:
-            return None
-        return 2 * self.het_matrix.shape[0]
-
-    @property
-    def L(self):
-        if self.het_matrix is None:
-            return None
-        return self.het_matrix.shape[1] * self.window_size
-
-    def get_data(self, window_size: int):
-        if window_size != self.window_size:
-            raise ValueError(
-                f"This contig was created with a window size of {self.window_size} "
-                "but you requested {window_size}"
-            )
-        return asdict(self)
-
-
-@dataclass(frozen=True)
-class TreeSequenceContig(Contig):
-    """Read data from a tree sequence.
-
-    Args:
-        ts: tree sequence
-        nodes: list of (node1, node2) pairs to include. Each pair corresponds to a
-            diploid genome. If None, include all individuals in the tree sequence.
-        mask: list of intervals (a, b). All positions within these intervals are
-            ignored.
-    """
-
-    ts: tskit.TreeSequence
-    nodes: list[tuple[int, int]] = None
-    mask: list[tuple[int, int]] = None
+    @classmethod
+    def from_tree_sequence(
+        cls,
+        ts: tskit.TreeSequence,
+        nodes: list[tuple[int, int]] = None,
+        mask: list[tuple[int, int]] = None,
+    ) -> "MemoryContig":
+        return cls(ts=ts, nodes=nodes, mask=mask)
 
     @property
     def _nodes(self):
+        if self.ts is None:
+            raise ValueError("Precomputed contigs do not have tree-sequence nodes")
         if self.nodes is not None:
             return self.nodes
         return [tuple(i.nodes) for i in self.ts.individuals()]
 
     def __post_init__(self):
+        precomputed = self.ts is None
+        if precomputed:
+            if any(x is None for x in (self.het_matrix, self.afs, self.window_size)):
+                raise ValueError(
+                    "Precomputed MemoryContig requires het_matrix, afs, and window_size"
+                )
+            if self.nodes is not None or self.mask is not None:
+                raise ValueError(
+                    "nodes/mask are only valid for tree-sequence-backed MemoryContig"
+                )
+            return
+        if any(x is not None for x in (self.het_matrix, self.afs, self.window_size)):
+            raise ValueError(
+                "Tree-sequence-backed MemoryContig should not also store precomputed arrays"
+            )
         try:
             assert isinstance(self._nodes, list)
             for x in self._nodes:
@@ -201,23 +213,33 @@ class TreeSequenceContig(Contig):
                 assert len(x) == 2
                 for y in x:
                     assert isinstance(int(y), int)
-        except AssertionError:
+        except AssertionError as exc:
             raise ValueError(
-                "Nodes should be a list of tuples (node1, node2) "
-                "leaf node ids in the tree sequence denoting the pairs "
-                "of haplotypes that are to be analyzed."
-            )
+                "Nodes should be a list of tuples (node1, node2) leaf node ids in "
+                "the tree sequence denoting the haplotype pairs to analyze."
+            ) from exc
 
     @property
     def N(self):
-        "Number of ploids in this dataset."
-        return 2 * len(self._nodes)
+        if self.ts is not None:
+            return 2 * len(self._nodes)
+        return 2 * self.het_matrix.shape[0]
 
     @property
     def L(self):
-        return int(self.ts.get_sequence_length())
+        if self.ts is not None:
+            return int(self.ts.get_sequence_length())
+        return self.het_matrix.shape[1] * self.window_size
 
     def get_data(self, window_size: int):
+        if self.ts is None:
+            if window_size != self.window_size:
+                raise ValueError(
+                    f"This contig was created with a window size of {self.window_size} "
+                    f"but you requested {window_size}"
+                )
+            return dict(het_matrix=self.het_matrix, afs=self.afs)
+
         # form interval tree for masking
         mask = self.mask or []
         tr = IntervalTree.from_tuples([(0, self.L)])
@@ -274,59 +296,42 @@ def _read_ts(
     return G
 
 
-class _VCFFile:
-    def __init__(self, file_path, samples: list[str]):
-        self.file_path = file_path
-        self.samples = samples
-        self.vcf = pysam.VariantFile(file_path)  # opens the VCF or BCF file
-        self.vcf.subset_samples(samples)
-        self._contigs = {name: c.length for name, c in self.vcf.header.contigs.items()}
+def _parse_region(region: str) -> tuple[str, tuple[int, int]]:
+    if region is None or not re.fullmatch(r"[^:]+:\d+-\d+", region):
+        raise ValueError(
+            "VCZ inputs require a region string of the form 'contig:start-end'."
+        )
+    contig, interval = region.split(":")
+    start, end = map(int, interval.split("-"))
+    if start >= end:
+        raise ValueError(
+            "region must be an interval 'contig:start-end' with start < end"
+        )
+    return contig, (start, end)
 
-    @property
-    def header(self):
-        return self.vcf.header
 
-    @property
-    def contigs(self):
-        return self._contigs
-
-    def fetch(self, **kwargs):
-        # Check if the samples are in the VCF header
-        def variant_iterator():
-            for record in self.vcf.fetch(**kwargs):
-                het = np.zeros(len(self.samples), dtype=np.int8)
-                nd = 0  # number of derived alleles
-                for i, sample in enumerate(self.samples):
-                    gt = record.samples[sample]["GT"]
-                    if gt is None or None in gt:
-                        het[i] = -1
-                    else:
-                        het[i] = gt[0] != gt[1]
-                    nd += sum([g != 0 and g is not None for g in gt])
-                yield {"pos": record.pos, "ref": record.ref, "nd": nd, "het": het}
-
-        return variant_iterator()
+def _vcz_contigs(ds) -> list[str]:
+    if "contigs" in ds.attrs:
+        return list(map(str, ds.attrs["contigs"]))
+    return list(map(str, ds.contig_id.values))
 
 
 @dataclass(frozen=True)
-class VcfContig(Contig):
-    """Read data from a VCF file.
+class VczContig(Contig):
+    """Read data from a VCF Zarr (VCZ) store.
 
     Args:
-        vcf_file: path to VCF file
+        vcz_path: path to a VCZ/Zarr store
         contig: contig name
         interval: genomic interval (start, end)
         samples: list of sample ids to include
     """
 
-    vcf_file: str
+    vcz_path: str
     samples: list[str]
     contig: str
     interval: tuple[int, int]
     mask: list[tuple[int, int]] = None
-    _allow_empty_region: bool = field(
-        repr=False, default=False, metadata=dict(docs=False)
-    )
 
     @property
     def N(self):
@@ -335,146 +340,117 @@ class VcfContig(Contig):
 
     @property
     def L(self):
-        "Length of sequence"
-        if self.interval is None:
-            v = self._vcf
-            if self.contig is None:
-                assert len(v.contigs) == 1
-                return list(v.contigs.values())[0]
-            else:
-                return v.contigs[self.contig]
-        return self.interval[1] - self.interval[0]
+        "Length of sequence."
+        start, end = self.interval
+        return end - start + 1
 
     def __post_init__(self):
         if self.mask is not None:
             raise NotImplementedError(
-                "masking is not yet implemented for VCF files, please use vcftools or "
-                "a similar method."
+                "masking is not yet implemented for VCZ inputs. Pre-mask the dataset "
+                "before conversion."
             )
-        if not self._allow_empty_region:
-            if not self.contig:
-                raise ValueError(
-                    "contig must be specified. reading in the entire vcf file "
-                    "without specifying a contig and region is unsupported."
-                )
-            if self.interval[0] >= self.interval[1]:
-                raise ValueError("region must be an interval (a,b) with a < b")
+        if not self.contig:
+            raise ValueError("contig must be specified for VCZ inputs")
+        if self.interval[0] >= self.interval[1]:
+            raise ValueError("interval must satisfy start < end")
         if not all(isinstance(s, str) for s in self.samples):
             raise ValueError(
-                "samples should be a list of (string) sample identifiers in the vcf"
+                "samples should be a list of sample identifiers in the VCZ store"
             )
         if len(self.samples) == 0:
             raise ValueError("no samples were provided")
-        diff = set(self.samples) - set(self._vcf.header.samples)
+        ds = sgkit.load_dataset(self.vcz_path)
+        if ds.call_genotype.shape[-1] != 2:
+            raise ValueError("phlash currently requires diploid genotypes in VCZ input")
+        contigs = set(_vcz_contigs(ds))
+        if self.contig not in contigs:
+            raise ValueError(f"contig '{self.contig}' was not found in the VCZ store")
+        diff = set(self.samples) - set(map(str, ds.sample_id.values))
         if diff:
-            raise ValueError(f"the following samples were not found in the vcf: {diff}")
-
-    @property
-    def _vcf(self):
-        return _VCFFile(self.vcf_file, self.samples)
+            raise ValueError(
+                f"the following samples were not found in the VCZ store: {diff}"
+            )
 
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
-        vcf = self._vcf
-        if not self._allow_empty_region:
-            contig = self.contig
-            start, end = self.interval
-            kwargs = {"contig": contig, "start": start, "stop": end}
-        else:
-            assert len(vcf.contigs) == 1
-            contig, end = next(iter(vcf.contigs.items()))
-            start = 1
-            kwargs = {}
+        ds = sgkit.load_dataset(self.vcz_path)
+        contigs = _vcz_contigs(ds)
+        contig_index = contigs.index(self.contig)
+        start, end = self.interval
         L = end - start + 1
         N = len(self.samples)
         afs = np.zeros(2 * N + 1, dtype=np.int64)
-        H = np.zeros([N, int(L / window_size)], dtype=bool)
-        # TODO this doesn't handle missing entries correctly
-        for rec in self._vcf.fetch(**kwargs):
-            x = rec["pos"] - start
-            i = min(H.shape[1] - 1, int(x / window_size))
-            # ty = variant.gt_types
-            H[:, i] |= rec["het"] > 0
-            afs[rec["nd"]] += 1
+        num_windows = max(1, int(np.ceil(L / window_size)))
+        H = np.zeros([N, num_windows], dtype=bool)
+        sample_lookup = {str(sample): i for i, sample in enumerate(ds.sample_id.values)}
+        sample_index = np.array([sample_lookup[s] for s in self.samples], dtype=int)
+        variant_contig = np.asarray(ds.variant_contig.values)
+        variant_position = np.asarray(ds.variant_position.values)
+        variant_index = np.flatnonzero(
+            (variant_contig == contig_index)
+            & (variant_position >= start)
+            & (variant_position <= end)
+        )
+        if variant_index.size == 0:
+            return dict(het_matrix=H.astype(np.int8), afs=afs[1:-1])
+
+        gt = np.asarray(
+            ds.call_genotype.isel(variants=variant_index, samples=sample_index).values
+        )
+        if "call_genotype_mask" in ds:
+            gt_mask = np.asarray(
+                ds.call_genotype_mask.isel(
+                    variants=variant_index, samples=sample_index
+                ).values
+            )
+        else:
+            gt_mask = np.zeros_like(gt, dtype=bool)
+
+        missing = (gt < 0) | gt_mask
+        het = (gt[..., 0] != gt[..., 1]) & ~missing.any(axis=-1)
+        nd = ((gt > 0) & ~missing).sum(axis=(1, 2))
+
+        for pos, het_row, nd_row in zip(variant_position[variant_index], het, nd):
+            i = min(num_windows - 1, int((pos - start) / window_size))
+            H[:, i] |= het_row
+            afs[int(nd_row)] += 1
         return dict(het_matrix=H.astype(np.int8), afs=afs[1:-1])
 
 
 def contig(
-    src: str | tskit.TreeSequence,
-    samples: list[str] | list[tuple[int, int]],
+    src: str,
+    samples: list[str],
     region: str = None,
 ) -> Contig:
     """
-    Constructs and returns a Contig object based on the source file and specified
-    parameters.
-
-    This function supports VCF files (`.vcf`, `.vcf.gz`, `.bcf`), tree sequence files
-    (`.trees`, `.ts`), and compressed tree sequence files (`.tsz`, `.tszip`). It
-    requires different handling and parameters based on the file type.
-
-    For VCF files, a bcftools region string must be passed in the `region` parameter.
-    The function will parse this string to construct a VcfContig object.
-
-    For tree sequence files and their compressed versions, the `region` parameter is
-    not supported, and the function constructs a TreeSequenceContig object.
+    Construct a file-backed Contig from a VCZ store.
 
     Parameters:
-    - src: Path to the source file, or a tskit.TreeSequence.
-    - samples: A list of samples or a list of sample intervals.
-    - region: A string specifying the genomic region, required for VCF files.
+    - src: Path to a VCZ/Zarr store.
+    - samples: A list of sample identifiers.
+    - region: A string specifying the genomic region.
       Format should be "contig:start-end" (e.g., "chr1:1000-5000").
 
     Returns:
-    - Contig: A Contig object which can be either VcfContig or TreeSequenceContig based
-      on the input file type.
+    - Contig: A VczContig object.
 
     Raises:
-    - ValueError: If the region is not provided or incorrectly formatted for VCF files,
-      or if region is provided for tree sequence files. Also raised if loading the file
-      fails for any supported format.
+    - ValueError: If the path is not a VCZ store or the region is invalid.
 
     Examples:
-    - contig("example.vcf.gz", samples=["sample1", "sample2"], region="chr1:1000-5000")
-    - contig("example.trees", samples=[(1, 100), (101, 200)])
-
-    Note:
-    - See the documentation of VcfContig and TreeSequenceContig for more details on
-    these classes.
+    - contig("example.vcz", samples=["sample1", "sample2"], region="chr1:1000-5000")
     """
-    if isinstance(src, str) and any(
-        src.endswith(x) for x in [".vcf", ".vcf.gz", ".bcf"]
-    ):
-        if region is None or not re.match(r"\w+:\d+-\d+", region):
-            raise ValueError(
-                "VCF files require passing in a bcftools region string. "
-                "See docstring for examples."
-            )
-        c, intv = region.split(":")
-        a, b = map(int, intv.split("-"))
-        try:
-            return VcfContig(src, samples=samples, contig=c, interval=(a, b))
-        except Exception as e:
-            raise ValueError(f"Trying to load {src} as a VCF failed") from e
-
-    if isinstance(src, tskit.TreeSequence):
-        ts = src
-    elif src.endswith(".trees") or src.endswith(".ts"):
-        try:
-            ts = tskit.load(src)
-        except Exception as e:
-            raise ValueError(f"Trying to load {src} as a tree sequence failed") from e
-    elif src.endswith(".tsz") or src.endswith(".tszip"):
-        try:
-            ts = tszip.decompress(src)
-        except Exception as e:
-            raise ValueError(
-                f"Trying to load {src} as a compressed tree sequence failed"
-            ) from e
-    if region is not None:
+    if not isinstance(src, str):
+        raise ValueError("contig() only supports VCZ/Zarr paths.")
+    if src.endswith((".vcf", ".vcf.gz", ".bcf", ".trees", ".ts", ".tsz", ".tszip")):
         raise ValueError(
-            "Region string is not supported for tree sequence files. "
-            "Use TreeSequence.keep_intervals() instead."
+            "Only VCZ/Zarr input is supported. Convert VCF/BCF or tree sequences to "
+            "VCZ first, e.g. with bio2zarr."
         )
-    return TreeSequenceContig(ts, nodes=samples)
+    if not src.endswith((".vcz", ".zarr")):
+        raise ValueError("Only VCZ/Zarr input is supported")
+    contig_name, interval = _parse_region(region)
+    return VczContig(src, samples=samples, contig=contig_name, interval=interval)
 
 
 def subsample_chrom(chrom_path, populations: tuple[int]):
@@ -500,7 +476,7 @@ def subsample_chrom(chrom_path, populations: tuple[int]):
     # the effect is minimal.
     pos = ts.tables.sites.position
     ts = ts.keep_intervals([[pos.min(), pos.max()]]).trim()
-    return contig(ts, samples=new_nodes)
+    return MemoryContig.from_tree_sequence(ts, nodes=new_nodes)
 
 
 def init_mcmc_data(

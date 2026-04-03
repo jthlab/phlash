@@ -5,7 +5,6 @@ import os.path
 import re
 import shlex
 import subprocess
-import tempfile
 import warnings
 from concurrent.futures import as_completed
 from typing import TypedDict
@@ -15,7 +14,7 @@ import numpy as np
 import stdpopsim
 from loguru import logger
 
-from phlash.data import Contig, TreeSequenceContig, VcfContig
+from phlash.data import Contig, MemoryContig
 from phlash.mp import JaxCpuProcessPoolExecutor
 from phlash.size_history import DemographicModel, SizeHistory
 
@@ -185,7 +184,7 @@ def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
         return ts.as_vcf(
             individual_names=samples, position_transform=pt, contig_id=chrom.id
         )
-    return TreeSequenceContig(ts)
+    return MemoryContig.from_tree_sequence(ts)
 
 
 def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
@@ -239,17 +238,9 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
         bufsize=1,
         universal_newlines=True,
     ) as proc:
-        vcf = _parse_scrm(proc.stdout, chrom.id)
-    if return_vcf:
-        return vcf
-    fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
-    with os.fdopen(fd, "wt") as f:
-        f.write(vcf)
-    n = sum(samples) // 2
-    samples = [f"sample{i}" for i in range(n)]
-    return VcfContig(
-        vcf_path, samples, contig=None, interval=None, _allow_empty_region=True
-    ).to_raw(100)
+        if return_vcf:
+            return _parse_scrm(proc.stdout, chrom.id)
+        return _scrm_to_memory_contig(proc.stdout, window_size=100)
 
 
 def _parse_scrm(scrm_out, chrom_name) -> str:
@@ -291,6 +282,36 @@ def _parse_scrm(scrm_out, chrom_name) -> str:
         cols += ["|".join(gt) for gt in gtz]
         print("\t".join(cols), file=vcf)
     return vcf.getvalue()
+
+
+def _scrm_to_memory_contig(scrm_out, window_size: int) -> MemoryContig:
+    "Convert scrm output directly into the windowed representation used by phlash."
+    cmd_line = next(scrm_out).strip()
+    L = int(re.search(r"-r [\d.]+ (\d+)", cmd_line)[1])
+    scrm_cmds = cmd_line.strip().split(" ")
+    assert scrm_cmds[0] == "scrm"
+    assert scrm_cmds[2] == "1"
+    ploids = int(scrm_cmds[1])
+    assert ploids % 2 == 0
+    n = ploids // 2
+    num_windows = max(1, int(np.ceil(L / window_size)))
+    het_matrix = np.zeros((n, num_windows), dtype=bool)
+    afs = np.zeros(2 * n + 1, dtype=np.int64)
+    while not next(scrm_out).startswith("position"):
+        continue
+    for line in scrm_out:
+        if line.startswith("SFS: "):
+            continue
+        pos, _, *gts = line.strip().split(" ")
+        pos = int(1 + float(pos))
+        alleles = np.fromiter((int(gt) for gt in gts), dtype=np.int8)
+        afs[int(alleles.sum())] += 1
+        gt = alleles.reshape(n, 2)
+        i = min(num_windows - 1, int((pos - 1) / window_size))
+        het_matrix[:, i] |= gt[:, 0] != gt[:, 1]
+    return MemoryContig.from_data(
+        het_matrix=het_matrix.astype(np.int8), afs=afs[1:-1], window_size=window_size
+    )
 
 
 def _find_stdpopsim_model(
