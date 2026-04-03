@@ -1,57 +1,27 @@
 "Different parameterizations needed for MCMC and HMM"
 
-from typing import NamedTuple
-
 import jax
 import jax.numpy as jnp
 import jax.scipy as jsp
 import jax_dataclasses as jdc
 from jaxtyping import Array, Float
+from phlashlib.params import PSMCParams as _PSMCParams
 
+from phlash._phlashlib import as_piecewise_constant, rho_to_phlashlib, theta_to_phlashlib
 import phlash.size_history
-import phlash.transition
 from phlash.util import Pattern, softplus_inv
 
 
-class PSMCParams(NamedTuple):
-    b: Float[Array, "M"]
-    d: Float[Array, "M"]
-    u: Float[Array, "M"]
-    v: Float[Array, "M"]
-    emis0: Float[Array, "M"]
-    emis1: Float[Array, "M"]
-    pi: Float[Array, "M"]
-
-    @property
-    def M(self) -> int:
-        "The number of discretization intervals"
-        M = self.d.shape[-1]
-        assert all(a.shape[-1] == M for a in self)
-        return M
+class PSMCParams(_PSMCParams):
 
     @classmethod
     def from_dm(cls, dm: phlash.size_history.DemographicModel) -> "PSMCParams":
         "Initialize parameters from a demographic model"
         assert dm.M == 16, "require M=16"
-        u = dm.theta * dm.eta.ect()
-        emis0 = jnp.exp(-u)
-        emis1 = -jnp.expm1(-u)
-        pi = dm.eta.pi
-        A = phlash.transition.transition_matrix(dm)
-        emis0, emis1, pi, A = jax.tree.map(
-            lambda a: a.clip(1e-20, 1.0 - 1e-20), (emis0, emis1, pi, A)
-        )
-        b, d, u = (jnp.diag(A, i) for i in [-1, 0, 1])
-        v = A[0, 1:] / A[0, 1]
-        ut = u / v
-        return cls(
-            b=jnp.append(b, 0.0),
-            d=d,
-            u=jnp.append(ut, 0.0),
-            v=jnp.insert(v, 0, 0.0),
-            emis0=emis0,
-            emis1=emis1,
-            pi=pi,
+        return cls.from_piecewise_const(
+            eta=as_piecewise_constant(dm.eta),
+            theta=theta_to_phlashlib(dm.theta),
+            rho=rho_to_phlashlib(dm.rho),
         )
 
 

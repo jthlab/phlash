@@ -9,6 +9,7 @@ for w in (FutureWarning, UserWarning):
 
 # this needs to occur before jax loads
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+os.environ.setdefault("PHLASHLIB_ENABLE_CPU", "1")
 import sys
 
 import jax

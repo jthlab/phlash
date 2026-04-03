@@ -8,7 +8,7 @@ authors = [
 dependencies = [
     "blackjax<2.0.0,>=1.1.0",
     "intervaltree<4.0.0,>=3.1.0",
-    "jax>=0.4.25,<0.6.0",
+    "jax>=0.7.2,<0.8.0",
     "loguru<1.0.0,>=0.7.2",
     "matplotlib<4.0.0,>=3.8.2",
     "msprime>=1.3.2",
@@ -27,8 +27,9 @@ dependencies = [
     "pysam>=0.22.1",
     "scienceplots>=2.1.1",
     "numcodecs<0.16",
+    "phlashlib==0.2.1",
 ]
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.12,<3.14"
 readme = "README.md"
 license = {text = "MIT"}
 
@@ -39,8 +40,9 @@ license = {text = "MIT"}
 
 [project.optional-dependencies]
 gpu = [
-    "jax[cuda12]>=0.4.25,<0.6.0",
-    "cuda-python<13,>=12.3",
+    "jax[cuda12]>=0.7.2,<0.8.0",
+    "cuda-bindings>=12.3,<13.0",
+    "cuda-python>=12.2,<13",
     "nvidia-cuda-nvrtc-cu12>=12.3",
 ]
 
@@ -50,6 +52,7 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 markers = [
+    "gpu: marks tests that exercise the optional GPU likelihood backend",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
 ]
 
