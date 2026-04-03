@@ -27,14 +27,23 @@ jobs:
       run: |
         brew update
         brew install gsl
-    - name: Set up Python 3.10
+    - name: Set up Python 3.12
       uses: actions/setup-python@v3
       with:
-        python-version: "3.10"
-    - name: Install PDM
-      uses: pdm-project/setup-pdm@v4
-    # You are now able to use PDM in your workflow
-    - name: Install dependencies
-      run: pdm install -d
+        python-version: "3.12"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
     - name: Run tests
-      run: pdm run py.test -m 'not slow'
+      run: uv run --group test --no-extra gpu --exact py.test -xvs
+  test-gpu:
+    runs-on: [self-hosted, linux, X64, gpu]
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.12"
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+    - name: Run tests
+      run: uv run --group test --extra gpu --exact py.test -xvs

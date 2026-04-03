@@ -1,6 +1,5 @@
 import blackjax
 import jax
-import jax_dataclasses as jdc
 import numpy as np
 import optax
 import tqdm.auto as tqdm
@@ -13,7 +12,6 @@ from loguru import logger
 from phlash.afs import bws_transform, fold_transform
 from phlash.data import Contig, init_mcmc_data
 from phlash.kernel import get_kernel
-from phlash.ld.data import LdStats
 from phlash.model import log_density
 from phlash.params import MCMCParams
 from phlash.size_history import DemographicModel
@@ -31,15 +29,6 @@ def _check_jax_gpu():
 
 
 _particles = None  # for debugging
-
-
-def _default_afs_transform(afs: dict[int, np.ndarray]) -> dict[int, np.ndarray]:
-    ret = {}
-    for n, afs_n in afs.items():
-        T1 = fold_transform(afs_n.shape[0] + 1)
-        T2 = bws_transform(T1 @ afs_n)
-        ret[n] = T2 @ T1
-    return ret
 
 
 def fit(
@@ -96,36 +85,11 @@ def fit(
     # the number of parallel workers. by default, use all cores, but this can take up
     # too much memory. set num_workers=1 to process the data sequentially.
     num_workers = options.get("num_workers")
-    logger.info("Loading data...")
+    logger.info("Loading data")
     afs, chunks = init_mcmc_data(
         data, window_size, overlap, chunk_size, max_samples, num_workers
     )
-    logger.trace("chunks.shape={}", chunks.shape)
-    # some chunks have huge mutation rate, due to SV or whatever, set to missing
-    c = options.get("het_cutoff", 0.05)
-    m = chunks[..., 1] / np.maximum(1, chunks[..., 0]) > c
-    if m.mean() > 0:
-        chunks[m] = [0, 0]
-        logger.warning(
-            f"{m.mean() * 100:.2f}% of windows had heterozygosity of >{c * 100:.2f}%. "
-            " These windows have been marked as missing data. This cutoff can be"
-            " controlled with the het_cutoff= option."
-        )
-    # create ld
-    lds = {}
-    for d in data:
-        if d.ld is not None:
-            for k, v in d.ld.items():
-                lds.setdefault(k, []).extend(v)
-    if lds:
-        # convert list-of-pytrees to pytree of arrays
-        lds = {k: LdStats.summarize(v) for k, v in lds.items() if v}  # v could be empty
     # to conserve memory, we get rid of data at this point
-    try:
-        num_samples = next(d.hets.shape[0] for d in data if d.hets is not None)
-    except StopIteration:
-        raise ValueError("No data found")
-    logger.debug("n={}", num_samples)
     del data
     # the mutation rate per generation, if known.
     mutation_rate = options.get("mutation_rate")
@@ -145,7 +109,9 @@ def fit(
     else:
         # by default, fold the afs and apply a 90% binning strategy as in
         # Bhaskar-Wang-Song
-        afs_transform = _default_afs_transform(afs)
+        T1 = fold_transform(len(afs) + 1)
+        T2 = bws_transform(T1 @ afs)
+        afs_transform = T2 @ T1
 
     # on average, we'd like to visit every data point once. but we don't want it to be
     # too huge because that slows down computation, and usually isn't doesn't lead to
@@ -177,80 +143,56 @@ def fit(
     init = options.get("init")
     # watterson's estimator of the mutation rate
     ch0 = chunks[:, overlap:]
-    w = ch0.sum((0, 1))
-    watterson = w[1] / w[0]
+    watterson = ch0[ch0 > -1].mean() / window_size
     # User can override theta if they want -- mainly useful for getting aligned
     # beginning/end time points across different populations.
-    theta = options.get("theta", watterson)
+    watterson = options.get("theta", watterson)
     # although we could work in the per-generation scaling if 'mutation_rate' is passed,
     # it seems to be numerically better (estimates are more accurate) to work in the
     # coalescent scaling. perhaps because all the calculations are "O(1)" instead of
     # "O(huge number) * O(tiny number)" ...
+    theta = watterson  # i.e., N0=1
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
-        N0 = None
-        # If there are n samples coalescing at rate c then the rate of first
-        # coalescence is n * c.
-        # so first coalescence X ~ Exp(n/2N0). Then find t such that p(X <= t) = 1/M:
-        # 1 - exp(-(n/2N)t) = 1/M => t = -log(1 - 1/M) / (n / 2N)
         if mutation_rate is not None:
-            N0 = theta / 4 / mutation_rate
-            logger.debug("N0={}", N0)
-        t1 = options.get("t1", -jnp.log1p(-1.0 / 16) / num_samples)
+            N0 = theta / mutation_rate
+            options.setdefault("t1", 1e1 / 2 / N0)
+            options.setdefault("tM", 1e6 / 2 / N0)
+        t1 = options.get("t1", 1e-4)
         tM = options.get("tM", 15.0)
-        assert t1 < tM
-        logger.debug("t1={:g} tM={:f} N0={:.0f}", t1, tM, N0)
         rho = options.get("rho_over_theta", 1.0) * theta
         # this pattern is similar to the psmc default, but we have fewer params
         # (16) to use, so are a little more conservative with parameter tying
         pat = "14*1+1*2"
         init = MCMCParams.from_linear(
             pattern=pat,
-            rho=rho,
+            rho=rho * window_size,
             t1=t1,
             tM=tM,
             c=jnp.ones(len(Pattern(pat))),  # len(c)==len(Pattern(pattern))
-            theta=theta,
+            theta=theta * window_size,
             alpha=options.get("alpha", 0.0),
             beta=options.get("beta", 0.0),
-            N0=N0,
-            window_size=window_size,
         )
     assert isinstance(init, MCMCParams)
     opt = optax.amsgrad(learning_rate=options.get("learning_rate", 0.1))
-    df = grad(log_density)
-    svgd = blackjax.svgd(df, opt)
-    M = init.M
+    svgd = blackjax.svgd(grad(log_density), opt)
 
     # set up the particles and add noise
-    if False:
-
-        def f(key):
-            keys = jax.random.split(key, 3)
-            return jdc.replace(
-                init,
-                log_rho_over_theta=init.log_rho_over_theta + jax.random.normal(keys[0]),
-                t_tr=init.t_tr
-                + 1.0 * jax.random.normal(keys[1], shape=init.t_tr.shape),
-                c_tr=init.c_tr
-                + 0.1 * jax.random.normal(keys[2], shape=init.c_tr.shape),
-            )
-
-        P = options.get("num_particles", 500)
-        initial_particles = vmap(f)(jax.random.split(key, P))
-    else:
-        x0, unravel = ravel_pytree(init)
-        prior_mu = x0
-        key, rng_key_init = jax.random.split(key, 2)
-        prior_prec = options.get("sigma", 0.5)
-        initial_particles = vmap(unravel)(
-            prior_mu
-            + prior_prec
-            * jax.random.normal(
-                rng_key_init,
-                shape=(options.get("num_particles", 500), len(prior_mu)),
-            )
+    M = init.M
+    x0, unravel = ravel_pytree(init)
+    ndim = len(x0)
+    prior_mu = x0
+    key, rng_key_init = jax.random.split(key, 2)
+    prior_prec = options.get("sigma", 1.0) * jnp.eye(ndim)
+    initial_particles = vmap(unravel)(
+        jax.random.multivariate_normal(
+            rng_key_init,
+            prior_mu,
+            prior_prec,
+            shape=(options.get("num_particles", 500),),
         )
+    )
     logger.trace("Initial particles: {}", initial_particles)
     state = svgd.init(initial_particles)
     # this function takes gradients steps.
@@ -269,15 +211,13 @@ def fit(
     # if there is a test set, define elpd() function for computing expected
     # log-predictive density. used to gauge convergence.
     if test_data:
-        test_hets = test_data.hets[:max_samples]
-        test_afs = test_data.afs
-        test_ld = test_data.ld
-        if test_ld is not None:
-            test_ld = {k: LdStats.summarize(v) for k, v in test_ld.items() if v}
-        N_test = test_hets.shape[0]
+        d = test_data.get_data(window_size)
+        test_afs = d["afs"]
+        test_data = d["het_matrix"][:max_samples]
+        N_test = test_data.shape[0]
         test_kern = get_kernel(
             M=M,
-            data=np.ascontiguousarray(test_hets),
+            data=np.ascontiguousarray(d["het_matrix"]),
             double_precision=False,
         )
 
@@ -287,25 +227,22 @@ def fit(
             def _elpd_ll(mcp):
                 return log_density(
                     mcp,
-                    c=jnp.array([0.0, 1.0, 1.0, 1.0]),
+                    c=jnp.array([0.0, 1.0, 1.0]),
                     inds=jnp.arange(N_test),
                     kern=test_kern,
-                    warmup=None,
+                    warmup=jnp.full([N_test, 1], -1, dtype=jnp.int8),
                     afs=test_afs,
-                    ld=test_ld,
-                    afs_transform=_default_afs_transform(test_afs),
+                    afs_transform=afs_transform,
                 )
 
             return _elpd_ll(mcps).mean()
 
     # to have unbiased gradient estimates, need to pre-multiply the chunk term by ratio
     # (dataset size) / (minibatch size) = N / S.
-    c = options.get("c", np.array([1.0, N / S, 1.0, 1.0]))
     kw = dict(
         kern=train_kern,
-        c=c,
+        c=jnp.array([1.0, N / S, 1.0]),
         afs=afs,
-        ld=lds,
         afs_transform=afs_transform,
     )
 
@@ -323,6 +260,8 @@ def fit(
 
     def dms():
         ret = vmap(MCMCParams.to_dm)(state.particles)
+        # rates are per window, so we have to scale up to get the per-base-pair rates.
+        ret = ret._replace(theta=ret.theta / window_size, rho=ret.rho / window_size)
         if mutation_rate:
             ret = vmap(DemographicModel.rescale, (0, None))(ret, mutation_rate)
         return ret
@@ -365,6 +304,11 @@ def fit(
                 pbar.set_description(f"elpd={ema:.2f} a={a}")
             cb(dms())
     logger.info("MCMC finished successfully")
+    # notify the live plot that we are done. fails if we are not using liveplot.
+    try:
+        plotter.finish()
+    except Exception:
+        pass
 
     # convert to list of dms, easier for the end user who doesn't know jax
     return tree_unstack(dms())

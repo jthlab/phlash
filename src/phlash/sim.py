@@ -5,10 +5,8 @@ import os.path
 import re
 import shlex
 import subprocess
-import tempfile
 import warnings
 from concurrent.futures import as_completed
-from functools import partial
 from typing import TypedDict
 
 import demes
@@ -16,8 +14,8 @@ import numpy as np
 import stdpopsim
 from loguru import logger
 
-import phlash.mp
-from phlash.data import Contig
+from phlash.data import Contig, MemoryContig
+from phlash.mp import JaxCpuProcessPoolExecutor
 from phlash.size_history import DemographicModel, SizeHistory
 
 
@@ -88,18 +86,10 @@ def stdpopsim_dataset(
     ds = {}
     return_vcf = options.get("return_vcf")
     N0 = _get_N0(model, populations)
-    with phlash.mp.Pool() as pool:
+    with JaxCpuProcessPoolExecutor(max_workers=options.get("num_threads")) as pool:
         futs = {
             pool.submit(
-                _simulate,
-                model,
-                N0,
-                chrom,
-                pop_dict,
-                seed,
-                use_scrm,
-                return_vcf,
-                options.get("ld", True),
+                _simulate, model, N0, chrom, pop_dict, seed, use_scrm, return_vcf
             ): chrom_id
             for chrom_id, chrom in chroms.items()
         }
@@ -147,6 +137,12 @@ def _params_for_sim(
     chrom: stdpopsim.Contig,
     pop_dict: dict,
 ):
+    active_pops = [p for p, n in pop_dict.items() if n > 0]
+    if len(active_pops) == 1:
+        pd = {active_pops[0]: 2}
+    else:
+        assert len(active_pops) == 2
+        pd = {p: 1 for p in active_pops}
     r = chrom.recombination_map.rate
     assert len(r) == 1
     r = r.item()
@@ -162,8 +158,7 @@ def _simulate(
     pop_dict: dict,
     seed: int,
     use_scrm: bool,
-    return_vcf: bool | io.TextIOBase,
-    ld: bool,
+    return_vcf: bool,
 ) -> Contig:
     pd = _params_for_sim(model, N0, chrom, pop_dict)
     if use_scrm or (use_scrm is None and pd["rho"] > 1e5 and return_vcf is not False):
@@ -171,35 +166,25 @@ def _simulate(
             "Using scrm for model={}, chrom={}, pops={}", model.id, chrom.id, pop_dict
         )
         try:
-            return _simulate_scrm(
-                model, chrom, pop_dict, pd["N0"], seed, return_vcf
-            )
+            return _simulate_scrm(model, chrom, pop_dict, pd["N0"], seed, return_vcf)
         except Exception as e:
             logger.debug("Running scrm failed: {}", e)
-    return _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld)
+    return _simulate_msp(model, chrom, pop_dict, seed, return_vcf)
 
 
-def _simulate_msp(model, chrom, pop_dict, seed, return_vcf, ld) -> Contig | str:
+def _simulate_msp(model, chrom, pop_dict, seed, return_vcf) -> Contig | str:
     engine = stdpopsim.get_engine("msprime")
     ts = engine.simulate(model, chrom, pop_dict, seed=seed)
     if return_vcf:
-        if isinstance(return_vcf, str):
-            f = partial(ts.write_vcf, open(return_vcf, "w"))
-        else:
-            f = ts.as_vcf
 
         def pt(x):
             return (1 + np.array(x)).astype(int)
 
         samples = [f"sample{i}" for i in range(ts.num_individuals)]
-        return f(individual_names=samples, position_transform=pt, contig_id=chrom.id)
-    kw = dict(
-        ts=ts,
-        nodes=[(2 * i, 2 * i + 1) for i, _ in enumerate(ts.individuals())],
-    )
-    if ld:
-        kw["genetic_map"] = chrom.recombination_map
-    return Contig.from_ts(**kw)
+        return ts.as_vcf(
+            individual_names=samples, position_transform=pt, contig_id=chrom.id
+        )
+    return MemoryContig.from_tree_sequence(ts)
 
 
 def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
@@ -233,6 +218,9 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
             seed,
         ]
     )
+    if sum(samples) > 200:
+        # for simulating very large samples, reduce the number of recombination windows
+        args.extend(["-l", "100r"])
     scrm = os.environ.get("SCRM_PATH", "scrm")
     cmd = [scrm, sum(samples), 1] + args
     cmd = list(map(str, cmd))
@@ -250,22 +238,9 @@ def _simulate_scrm(model, chrom, pop_dict, N0, seed, return_vcf, out_file=None):
         bufsize=1,
         universal_newlines=True,
     ) as proc:
-        vcf = _parse_scrm(proc.stdout, chrom.id)
-    if isinstance(return_vcf, str):
-        with open(return_vcf, "w") as f:
-            f.write(vcf)
-        return
-    elif return_vcf is True:
-        return vcf
-    fd, vcf_path = tempfile.mkstemp(suffix=".vcf")
-    with os.fdopen(fd, "wt") as f:
-        f.write(vcf)
-    n = sum(samples) // 2
-    samples = [f"sample{i}" for i in range(n)]
-    # FIXME this will fail with empty Contig and interval
-    return Contig.from_vcf(
-        vcf_path=vcf_path, sapmles=samples, contig=None, interval=None
-    ).to_raw(100)
+        if return_vcf:
+            return _parse_scrm(proc.stdout, chrom.id)
+        return _scrm_to_memory_contig(proc.stdout, window_size=100)
 
 
 def _parse_scrm(scrm_out, chrom_name) -> str:
@@ -307,6 +282,36 @@ def _parse_scrm(scrm_out, chrom_name) -> str:
         cols += ["|".join(gt) for gt in gtz]
         print("\t".join(cols), file=vcf)
     return vcf.getvalue()
+
+
+def _scrm_to_memory_contig(scrm_out, window_size: int) -> MemoryContig:
+    "Convert scrm output directly into the windowed representation used by phlash."
+    cmd_line = next(scrm_out).strip()
+    L = int(re.search(r"-r [\d.]+ (\d+)", cmd_line)[1])
+    scrm_cmds = cmd_line.strip().split(" ")
+    assert scrm_cmds[0] == "scrm"
+    assert scrm_cmds[2] == "1"
+    ploids = int(scrm_cmds[1])
+    assert ploids % 2 == 0
+    n = ploids // 2
+    num_windows = max(1, int(np.ceil(L / window_size)))
+    het_matrix = np.zeros((n, num_windows), dtype=bool)
+    afs = np.zeros(2 * n + 1, dtype=np.int64)
+    while not next(scrm_out).startswith("position"):
+        continue
+    for line in scrm_out:
+        if line.startswith("SFS: "):
+            continue
+        pos, _, *gts = line.strip().split(" ")
+        pos = int(1 + float(pos))
+        alleles = np.fromiter((int(gt) for gt in gts), dtype=np.int8)
+        afs[int(alleles.sum())] += 1
+        gt = alleles.reshape(n, 2)
+        i = min(num_windows - 1, int((pos - 1) / window_size))
+        het_matrix[:, i] |= gt[:, 0] != gt[:, 1]
+    return MemoryContig.from_data(
+        het_matrix=het_matrix.astype(np.int8), afs=afs[1:-1], window_size=window_size
+    )
 
 
 def _find_stdpopsim_model(
