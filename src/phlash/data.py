@@ -1,5 +1,6 @@
 "Classes for importing data"
 
+import gzip
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -316,6 +317,91 @@ def _vcz_contigs(ds) -> list[str]:
     return list(map(str, ds.contig_id.values))
 
 
+def _merge_intervals(intervals: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
+    ret = []
+    for start, end in sorted(intervals):
+        if start >= end:
+            continue
+        if not ret or start > ret[-1][1]:
+            ret.append((start, end))
+        else:
+            ret[-1] = (ret[-1][0], max(ret[-1][1], end))
+    return ret
+
+
+def _region_to_half_open(interval: tuple[int, int]) -> tuple[int, int]:
+    start, end = interval
+    return start - 1, end
+
+
+def _read_bed_intervals(
+    bed_file: str,
+    contig: str,
+) -> list[tuple[int, int]]:
+    opener = gzip.open if bed_file.endswith(".gz") else open
+    intervals = []
+    with opener(bed_file, "rt") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split()
+            if len(fields) < 3:
+                raise ValueError(f"Invalid BED line in {bed_file!r}: {line!r}")
+            chrom, start, end = fields[:3]
+            if chrom != contig:
+                continue
+            intervals.append((int(start), int(end)))
+    return _merge_intervals(intervals)
+
+
+def _clip_intervals(
+    intervals: Iterable[tuple[int, int]],
+    region_start: int,
+    region_end: int,
+) -> list[tuple[int, int]]:
+    clipped = []
+    for start, end in intervals:
+        start = max(start, region_start)
+        end = min(end, region_end)
+        if start < end:
+            clipped.append((start, end))
+    return _merge_intervals(clipped)
+
+
+def _positions_in_intervals(
+    positions: np.ndarray,
+    intervals: list[tuple[int, int]],
+) -> np.ndarray:
+    if len(intervals) == 0 or len(positions) == 0:
+        return np.zeros(len(positions), dtype=bool)
+    starts = np.array([a for a, _ in intervals], dtype=int)
+    ends = np.array([b for _, b in intervals], dtype=int)
+    idx = np.searchsorted(starts, positions, side="right") - 1
+    ret = np.zeros(len(positions), dtype=bool)
+    valid = idx >= 0
+    ret[valid] = positions[valid] < ends[idx[valid]]
+    return ret
+
+
+def _masked_sites_per_window(
+    intervals: list[tuple[int, int]],
+    region_start: int,
+    region_end: int,
+    window_size: int,
+) -> np.ndarray:
+    num_windows = max(1, int(np.ceil((region_end - region_start) / window_size)))
+    ret = np.zeros(num_windows, dtype=int)
+    for a, b in intervals:
+        first = max(0, (a - region_start) // window_size)
+        last = min(num_windows - 1, (b - 1 - region_start) // window_size)
+        for i in range(first, last + 1):
+            w_start = region_start + i * window_size
+            w_end = min(region_end, w_start + window_size)
+            ret[i] += max(0, min(b, w_end) - max(a, w_start))
+    return ret
+
+
 @dataclass(frozen=True)
 class VczContig(Contig):
     """Read data from a VCF Zarr (VCZ) store.
@@ -331,7 +417,9 @@ class VczContig(Contig):
     samples: list[str]
     contig: str
     interval: tuple[int, int]
-    mask: list[tuple[int, int]] = None
+    mask: list[tuple[int, int]] | None = None
+    bed_file: str | None = None
+    max_missing_sites: int = 0
 
     @property
     def N(self):
@@ -345,15 +433,12 @@ class VczContig(Contig):
         return end - start + 1
 
     def __post_init__(self):
-        if self.mask is not None:
-            raise NotImplementedError(
-                "masking is not yet implemented for VCZ inputs. Pre-mask the dataset "
-                "before conversion."
-            )
         if not self.contig:
             raise ValueError("contig must be specified for VCZ inputs")
         if self.interval[0] >= self.interval[1]:
             raise ValueError("interval must satisfy start < end")
+        if self.max_missing_sites < 0:
+            raise ValueError("max_missing_sites must be nonnegative")
         if not all(isinstance(s, str) for s in self.samples):
             raise ValueError(
                 "samples should be a list of sample identifiers in the VCZ store"
@@ -372,18 +457,33 @@ class VczContig(Contig):
                 f"the following samples were not found in the VCZ store: {diff}"
             )
 
+    def _mask_intervals(self) -> list[tuple[int, int]]:
+        intervals = []
+        if self.mask:
+            intervals.extend(self.mask)
+        if self.bed_file:
+            intervals.extend(_read_bed_intervals(self.bed_file, self.contig))
+        region_start, region_end = _region_to_half_open(self.interval)
+        return _clip_intervals(intervals, region_start, region_end)
+
     def get_data(self, window_size: int = 100) -> dict[str, np.ndarray]:
         ds = sgkit.load_dataset(self.vcz_path)
         contigs = _vcz_contigs(ds)
         contig_index = contigs.index(self.contig)
         start, end = self.interval
+        region_start, region_end = _region_to_half_open(self.interval)
         L = end - start + 1
         N = len(self.samples)
         afs = np.zeros(2 * N + 1, dtype=np.int64)
         num_windows = max(1, int(np.ceil(L / window_size)))
-        H = np.zeros([N, num_windows], dtype=bool)
+        H = np.zeros([N, num_windows], dtype=np.int8)
         sample_lookup = {str(sample): i for i, sample in enumerate(ds.sample_id.values)}
         sample_index = np.array([sample_lookup[s] for s in self.samples], dtype=int)
+        mask_intervals = self._mask_intervals()
+        masked_sites = _masked_sites_per_window(
+            mask_intervals, region_start, region_end, window_size
+        )
+        masked_windows = masked_sites > self.max_missing_sites
         variant_contig = np.asarray(ds.variant_contig.values)
         variant_position = np.asarray(ds.variant_position.values)
         variant_index = np.flatnonzero(
@@ -392,7 +492,17 @@ class VczContig(Contig):
             & (variant_position <= end)
         )
         if variant_index.size == 0:
-            return dict(het_matrix=H.astype(np.int8), afs=afs[1:-1])
+            H[:, masked_windows] = -1
+            return dict(het_matrix=H, afs=afs[1:-1])
+
+        variant_position0 = variant_position[variant_index] - 1
+        variant_masked = _positions_in_intervals(variant_position0, mask_intervals)
+        if variant_masked.any():
+            variant_index = variant_index[~variant_masked]
+            variant_position0 = variant_position0[~variant_masked]
+        if variant_index.size == 0:
+            H[:, masked_windows] = -1
+            return dict(het_matrix=H, afs=afs[1:-1])
 
         gt = np.asarray(
             ds.call_genotype.isel(variants=variant_index, samples=sample_index).values
@@ -410,17 +520,20 @@ class VczContig(Contig):
         het = (gt[..., 0] != gt[..., 1]) & ~missing.any(axis=-1)
         nd = ((gt > 0) & ~missing).sum(axis=(1, 2))
 
-        for pos, het_row, nd_row in zip(variant_position[variant_index], het, nd):
-            i = min(num_windows - 1, int((pos - start) / window_size))
-            H[:, i] |= het_row
+        for pos0, het_row, nd_row in zip(variant_position0, het, nd):
+            i = min(num_windows - 1, int((pos0 - region_start) / window_size))
+            H[:, i] |= het_row.astype(np.int8)
             afs[int(nd_row)] += 1
-        return dict(het_matrix=H.astype(np.int8), afs=afs[1:-1])
+        H[:, masked_windows] = -1
+        return dict(het_matrix=H, afs=afs[1:-1])
 
 
 def contig(
     src: str,
     samples: list[str],
     region: str = None,
+    bed_file: str | None = None,
+    max_missing_sites: int = 0,
 ) -> Contig:
     """
     Construct a file-backed Contig from a VCZ store.
@@ -430,6 +543,10 @@ def contig(
     - samples: A list of sample identifiers.
     - region: A string specifying the genomic region.
       Format should be "contig:start-end" (e.g., "chr1:1000-5000").
+    - bed_file: Optional BED file containing masked intervals for this contig.
+      BED intervals are interpreted in the standard 0-based, half-open convention.
+    - max_missing_sites: Maximum number of masked bases allowed per window before
+      the whole window is marked missing.
 
     Returns:
     - Contig: A VczContig object.
@@ -450,7 +567,14 @@ def contig(
     if not src.endswith((".vcz", ".zarr")):
         raise ValueError("Only VCZ/Zarr input is supported")
     contig_name, interval = _parse_region(region)
-    return VczContig(src, samples=samples, contig=contig_name, interval=interval)
+    return VczContig(
+        src,
+        samples=samples,
+        contig=contig_name,
+        interval=interval,
+        bed_file=bed_file,
+        max_missing_sites=max_missing_sites,
+    )
 
 
 def subsample_chrom(chrom_path, populations: tuple[int]):

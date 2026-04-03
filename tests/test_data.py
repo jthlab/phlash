@@ -83,6 +83,52 @@ def test_vcz(vcz_path):
     assert np.all(d["afs"] == [2, 0, 1])
 
 
+def test_vcz_bed_mask_marks_window_missing(vcz_path, tmp_path):
+    bed_path = tmp_path / "mask.bed"
+    bed_path.write_text("chr1\t10\t20\n")
+    vcz = VczContig(
+        vcz_path,
+        contig="chr1",
+        interval=(1, 200),
+        samples=["sample1", "sample2"],
+        bed_file=str(bed_path),
+    )
+    d = vcz.get_data(100)
+    assert d["het_matrix"].tolist() == [[-1, 0], [-1, 1]]
+    assert np.all(d["afs"] == [2, 0, 1])
+
+
+def test_vcz_bed_mask_threshold_boundary(vcz_path, tmp_path):
+    bed_path = tmp_path / "mask.bed"
+    bed_path.write_text("chr1\t10\t20\n")
+    vcz = VczContig(
+        vcz_path,
+        contig="chr1",
+        interval=(1, 200),
+        samples=["sample1", "sample2"],
+        bed_file=str(bed_path),
+        max_missing_sites=10,
+    )
+    d = vcz.get_data(100)
+    assert d["het_matrix"].tolist() == [[1, 0], [1, 1]]
+
+
+def test_vcz_bed_mask_excludes_masked_variants(vcz_path, tmp_path):
+    bed_path = tmp_path / "mask.bed"
+    bed_path.write_text("chr1\t50\t51\n")
+    vcz = VczContig(
+        vcz_path,
+        contig="chr1",
+        interval=(1, 200),
+        samples=["sample1", "sample2"],
+        bed_file=str(bed_path),
+        max_missing_sites=100,
+    )
+    d = vcz.get_data(100)
+    assert d["het_matrix"].tolist() == [[1, 0], [0, 1]]
+    assert np.all(d["afs"] == [2, 0, 0])
+
+
 def test_vcz_empty_samples(vcz_path):
     # if samples is an empty list, it should raise an error
     with pytest.raises(ValueError):
@@ -107,6 +153,20 @@ def test_vcz_missing_samples(vcz_path):
 def test_contig_vcz_factory(vcz_path):
     ds = contig(vcz_path, samples=["sample1", "sample2"], region="chr1:1-200")
     assert isinstance(ds, VczContig)
+
+
+def test_contig_vcz_factory_with_bed_mask(vcz_path, tmp_path):
+    bed_path = tmp_path / "mask.bed"
+    bed_path.write_text("chr1\t10\t20\n")
+    ds = contig(
+        vcz_path,
+        samples=["sample1", "sample2"],
+        region="chr1:1-200",
+        bed_file=str(bed_path),
+        max_missing_sites=0,
+    )
+    d = ds.get_data(100)
+    assert d["het_matrix"].tolist() == [[-1, 0], [-1, 1]]
 
 
 def test_contig_rejects_legacy_formats():

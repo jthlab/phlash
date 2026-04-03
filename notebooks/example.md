@@ -20,7 +20,7 @@ If you are familiar with the PSMC software, you may find it helpful to know that
 
 - `phlash` does not (yet) have a command-line interface. It is a Python package that is imported and used in a Python script or Jupyter notebook.
 - `phlash` is a Bayesian method that estimates a posterior distribution over demographic models, rather than a point estimate. This means that the output of `phlash` is a list of demographic models, each of which is a valid sample from the posterior distribution.
-- `phlash` does not have a proprietary data format. It can read data from VCF/BCF files or tree sequences, and can be extended to read other formats.
+- `phlash` uses a single file-backed input format: VCZ, a Zarr store in sgkit's genotype dataset layout.
 
 If you already have .psmcfa files (generated using i.e. the `fq2psmcfa` utility), a convenience function is provided for reanalyzing them with `phlash`:
 
@@ -42,22 +42,27 @@ import phlash
 ### Loading your data
 
 The `phlash.contig()` function is used to specify the contig(s) you will use to perform your analysis.
-<code>phlash</code> intentionally does not have its own proprietary data format. Data can be loaded natively in using either VCF/BCF- or TreeSequence-formatted files.
+<code>phlash</code> intentionally uses a single file-backed input format: VCZ/Zarr.
+If your data currently live in another format, convert them first using the official
+tools:
+
+- VCF / BCF to VCZ: [`bio2zarr` `vcf2zarr`](https://sgkit-dev.github.io/bio2zarr/vcf2zarr/overview.html)
+- PLINK to VCZ: [`bio2zarr` `plink2zarr`](https://sgkit-dev.github.io/bio2zarr/plink2zarr/overview.html)
+- tskit to VCZ: [`bio2zarr` `tskit2zarr`](https://sgkit-dev.github.io/bio2zarr/tskit2zarr/overview.html)
 
 <!-- #region -->
-#### Loading VCF data
+#### Loading VCZ data
 
 
-For example, to load data for sample `NA12878` from the first ten megabases of chromosome 22 in 1000 Genomes Phase 3 data release, execute the following:
+For example, to load data for sample `NA12878` from chromosome 22 in a preconverted
+1000 Genomes VCZ store, execute the following:
 <!-- #endregion -->
 
 ```python
 import os.path
 
 onekg_base = "/scratch/1kg"  # update with path on your local system
-template = (
-    "ALL.{chrom}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcf.gz"
-)
+template = "ALL.{chrom}.phase3_shapeit2_mvncall_integrated_v5a.20130502.genotypes.vcz"
 
 chr22_path = os.path.join(onekg_base, template.format(chrom="chr22"))
 chr22_c = phlash.contig(chr22_path, samples=["NA12878"], region="22:5000000-30000000")
@@ -75,33 +80,24 @@ To load data from all the autosomes, simply repeat this command for each of them
 #     )
 ```
 
-Notice that, to prevent inadvertent errors (such as the inclusion of telomeric regions into the analysis), the `samples=` and `region=` argument are required when loading VCF data. If you forget to provide them, the function will throw an error.
+Notice that, to prevent inadvertent errors (such as the inclusion of telomeric regions into the analysis), the `samples=` and `region=` arguments are required when loading VCZ data.
 
-
-#### Reading tree sequence data
-
-`phlash.contig()` also supports natively reading variants from tree sequences. For example, to load data for the first individual (represented as nodes `(0,1)`) in the [Wohns et al. inferred tree sequences](https://zenodo.org/records/5512994), execute the following commands:
+You may also provide a BED file of masked regions. Masked bases are treated as missing,
+and `max_missing_sites` controls how many masked bases are tolerated within a window
+before the entire window is marked missing:
 
 ```python
-import glob
-
-unified_base = "/scratch/unified"  # update with path on your local system
-pattern = "hgdp_tgp_sgdp_high_cov_ancients_chr*_?.dated.trees.tsz"
-
-chroms_ts = []
-
-for chrom in glob.glob(os.path.join(unified_base, pattern)):
-    chroms_ts.append(phlash.contig(chrom, samples=[(0, 1)]))
+chr22_masked = phlash.contig(
+    chr22_path,
+    samples=["NA12878"],
+    region="22:5000000-30000000",
+    bed_file="/path/to/mask.bed.gz",
+    max_missing_sites=20,
+)
 ```
 
-This cell takes longer to run, because `phlash` has to decompress and load each tree sequence, and also consumes more memory. (Note that `phlash.contig()` supports either tszipped or raw tree sequence files, or instantiated `TreeSequence` objects.)
-
-If memory consumption is a limiting factor on your machine, you may consider using [`TreeSequence.simplify()`](https://tskit.dev/tskit/docs/stable/python-api.html#tskit.TreeSequence.simplify) to subset the data before loading.
-
-
-#### Rolling your own data
-
-For use cases that are not covered here, you may directly import your own data using lower-level classes that are built into `phlash`. See [contig.py](../src/phlash/contig.py) for more information.
+Tree-sequence, VCF/BCF, and PLINK inputs should be converted to VCZ before calling
+`phlash.contig()`.
 
 
 ### Fitting the model
@@ -166,7 +162,9 @@ A number of options can be passed to `phlash.fit()` that affect the behavior of 
 
 
 ### Analyzing simulated data
-To explore how `phlash` performs under various settings, it can be useful to run it on simulated data. `phlash` can already natively import the results of `msprime` simulations (since they are TreeSequences; see above). A convenience method is also available to simulate data from the [`stdpopsim` catalog](https://popsim-consortium.github.io/stdpopsim-docs/stable/catalog.html).
+To explore how `phlash` performs under various settings, it can be useful to run it on
+simulated data. A convenience method is available to simulate data from the
+[`stdpopsim` catalog](https://popsim-consortium.github.io/stdpopsim-docs/stable/catalog.html).
 
 
 ```python
