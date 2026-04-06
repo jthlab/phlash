@@ -30,6 +30,36 @@ def _check_jax_gpu():
 _particles = None  # for debugging
 
 
+def _resolve_init_time_bounds(
+    *,
+    theta: float,
+    mutation_rate: float | None,
+    t1: float | None,
+    tM: float | None,
+) -> tuple[float, float]:
+    if mutation_rate is None:
+        units = "coalescent units"
+        t1 = 1e-4 if t1 is None else float(t1)
+        tM = 15.0 if tM is None else float(tM)
+        scale = 1.0
+    else:
+        if not np.isfinite(mutation_rate) or mutation_rate <= 0.0:
+            raise ValueError("mutation_rate must be a positive finite number")
+        if not np.isfinite(theta) or theta <= 0.0:
+            raise ValueError("theta must be a positive finite number")
+        units = "generations"
+        t1 = 1e3 if t1 is None else float(t1)
+        tM = 1e6 if tM is None else float(tM)
+        scale = 2.0 * theta / mutation_rate
+
+    for name, value in [("t1", t1), ("tM", tM)]:
+        if not np.isfinite(value) or value <= 0.0:
+            raise ValueError(f"{name} must be a positive finite number of {units}")
+    if t1 >= tM:
+        raise ValueError(f"t1 must be less than tM when specified in {units}")
+    return t1 / scale, tM / scale
+
+
 def fit(
     data: list[Contig],
     test_data: Contig = None,
@@ -155,12 +185,12 @@ def fit(
     theta = watterson  # i.e., N0=1
     logger.info("Scaled mutation rate Θ={:.4g}", theta)
     if init is None:
-        if mutation_rate is not None:
-            N0 = theta / mutation_rate
-            options.setdefault("t1", 1e1 / 2 / N0)
-            options.setdefault("tM", 1e6 / 2 / N0)
-        t1 = options.get("t1", 1e-4)
-        tM = options.get("tM", 15.0)
+        t1, tM = _resolve_init_time_bounds(
+            theta=theta,
+            mutation_rate=mutation_rate,
+            t1=options.get("t1"),
+            tM=options.get("tM"),
+        )
         rho = options.get("rho_over_theta", 1.0) * theta
         # this pattern is similar to the psmc default, but we have fewer params
         # (16) to use, so are a little more conservative with parameter tying
