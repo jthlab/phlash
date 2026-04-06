@@ -11,7 +11,7 @@ from typing import NamedTuple
 
 import numpy as np
 import sgkit
-import tqdm.auto as tqdm
+import tqdm
 import tskit
 import tszip
 from intervaltree import IntervalTree

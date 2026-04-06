@@ -1,8 +1,7 @@
-import blackjax
 import jax
 import numpy as np
 import optax
-import tqdm.auto as tqdm
+import tqdm
 from jax import grad, jit
 from jax import numpy as jnp
 from jax import vmap
@@ -63,6 +62,8 @@ def fit(
           procedure in various ways. See the source code of this function for more
           information.
     """
+    import blackjax
+
     _check_jax_gpu()
     # some defaults pulled from the options dict
     key = options.get("key", jax.random.PRNGKey(1))
