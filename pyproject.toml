@@ -28,6 +28,7 @@ dependencies = [
     "numcodecs<0.16",
     "sgkit>=0.10.0",
     "pyfaidx>=0.9.0.4",
+    "phlashlib==0.2.2",
 ]
 requires-python = ">=3.12,<4.0"
 readme = "README.md"
@@ -40,9 +41,9 @@ license = {text = "MIT"}
 
 [project.optional-dependencies]
 gpu = [
-    "jax[cuda12]>=0.8,<0.9",
-    "cuda-python<13,>=12.3",
-    "nvidia-cuda-nvrtc-cu12>=12.3",
+    "jax[cuda12]>=0.8,<0.9; sys_platform == 'linux'",
+    "cuda-python<13,>=12.3; sys_platform == 'linux'",
+    "nvidia-cuda-nvrtc-cu12>=12.3; sys_platform == 'linux'",
 ]
 
 [build-system]
