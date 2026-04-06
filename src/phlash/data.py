@@ -2,6 +2,7 @@
 
 import gzip
 import re
+import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import as_completed
@@ -9,7 +10,6 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 import numpy as np
-import pysam
 import sgkit
 import tqdm.auto as tqdm
 import tskit
@@ -17,6 +17,7 @@ import tszip
 from intervaltree import IntervalTree
 from jaxtyping import Array, Int, Int8
 from loguru import logger
+from pyfaidx import Fasta
 
 from phlash.mp import JaxCpuProcessPoolExecutor
 
@@ -24,6 +25,21 @@ from phlash.mp import JaxCpuProcessPoolExecutor
 class ChunkedContig(NamedTuple):
     chunks: Int8[Array, "N L"]
     afs: Int[Array, "n"]
+
+
+def _iter_fasta_records(path: str) -> Iterable[tuple[str, str]]:
+    """Yield FASTA records without leaving a sidecar index behind."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fasta = Fasta(
+            path,
+            indexname=f"{tmpdir}/psmcfa.fai",
+            sequence_always_upper=True,
+        )
+        try:
+            for name in fasta.keys():
+                yield name, str(fasta[name])
+        finally:
+            fasta.close()
 
 
 def _trim_het_matrix(het_matrix: np.ndarray):
@@ -159,20 +175,17 @@ class MemoryContig(Contig):
             to the `fq2psmcfa` utility when creating the .psmcfa file, and is usually
             set to 100bp.
         """
-        # parse psmcfa file
-        with pysam.FastxFile(psmcfa_path) as fx:
-            for record in fx:
-                contig_name = record.name
-                logger.debug(f"Reading contig {contig_name} from {psmcfa_path}")
-                seq = np.array(record.sequence, dtype="c")
-                data = (seq == b"K").astype(np.int8)
-                data[seq == b"N"] = -1  # account for missing data
-                afs = np.ones(1)
-                yield cls.from_data(
-                    het_matrix=data[None],
-                    afs=afs,
-                    window_size=window_size,
-                )
+        for contig_name, sequence in _iter_fasta_records(psmcfa_path):
+            logger.debug(f"Reading contig {contig_name} from {psmcfa_path}")
+            seq = np.array(sequence, dtype="c")
+            data = (seq == b"K").astype(np.int8)
+            data[seq == b"N"] = -1  # account for missing data
+            afs = np.ones(1)
+            yield cls.from_data(
+                het_matrix=data[None],
+                afs=afs,
+                window_size=window_size,
+            )
 
     @classmethod
     def from_tree_sequence(

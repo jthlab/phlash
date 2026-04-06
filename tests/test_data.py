@@ -43,6 +43,7 @@ def test_psmcfa(psmcfa_file):
     assert rc.het_matrix.shape == (1, 100)
     assert rc.het_matrix.sum() == 82
     assert rc.window_size == 100
+    assert not os.path.exists(psmcfa_file + ".fai")
 
 
 @fixture

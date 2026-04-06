@@ -1,4 +1,5 @@
 import os.path
+import shutil
 
 import jax
 import numpy as np
@@ -37,5 +38,8 @@ def kern(data):
 
 
 @fixture
-def psmcfa_file():
-    return os.path.join(os.path.dirname(__file__), "fixtures", "sample.psmcfa")
+def psmcfa_file(tmp_path):
+    src = os.path.join(os.path.dirname(__file__), "fixtures", "sample.psmcfa")
+    dst = tmp_path / "sample.psmcfa"
+    shutil.copy(src, dst)
+    return str(dst)

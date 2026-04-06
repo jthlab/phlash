@@ -24,10 +24,10 @@ dependencies = [
     "tszip<1.0.0,>=0.2.3",
     "jaxtyping<1.0.0,>=0.2.25",
     "pulp>=2.8.0",
-    "pysam>=0.22.1",
     "scienceplots>=2.1.1",
     "numcodecs<0.16",
     "sgkit>=0.10.0",
+    "pyfaidx>=0.9.0.4",
 ]
 requires-python = ">=3.12,<4.0"
 readme = "README.md"
