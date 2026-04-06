@@ -130,6 +130,18 @@ def test_vcz_bed_mask_excludes_masked_variants(vcz_path, tmp_path):
     assert np.all(d["afs"] == [2, 0, 0])
 
 
+def test_vcz_missing_bed_file_raises(vcz_path, tmp_path):
+    bed_path = tmp_path / "missing.bed"
+    with pytest.raises(FileNotFoundError, match="missing.bed"):
+        VczContig(
+            vcz_path,
+            contig="chr1",
+            interval=(1, 200),
+            samples=["sample1", "sample2"],
+            bed_file=str(bed_path),
+        )
+
+
 def test_vcz_empty_samples(vcz_path):
     # if samples is an empty list, it should raise an error
     with pytest.raises(ValueError):

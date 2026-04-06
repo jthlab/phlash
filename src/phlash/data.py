@@ -6,7 +6,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import as_completed
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import NamedTuple
 
 import numpy as np
@@ -433,6 +433,9 @@ class VczContig(Contig):
     mask: list[tuple[int, int]] | None = None
     bed_file: str | None = None
     max_missing_sites: int = 0
+    _bed_intervals: list[tuple[int, int]] | None = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     @property
     def N(self):
@@ -469,13 +472,19 @@ class VczContig(Contig):
             raise ValueError(
                 f"the following samples were not found in the VCZ store: {diff}"
             )
+        bed_intervals = None
+        if self.bed_file is not None:
+            if not isinstance(self.bed_file, str) or not self.bed_file:
+                raise ValueError("bed_file must be a non-empty path string")
+            bed_intervals = _read_bed_intervals(self.bed_file, self.contig)
+        object.__setattr__(self, "_bed_intervals", bed_intervals)
 
     def _mask_intervals(self) -> list[tuple[int, int]]:
         intervals = []
         if self.mask:
             intervals.extend(self.mask)
-        if self.bed_file:
-            intervals.extend(_read_bed_intervals(self.bed_file, self.contig))
+        if self._bed_intervals is not None:
+            intervals.extend(self._bed_intervals)
         region_start, region_end = _region_to_half_open(self.interval)
         return _clip_intervals(intervals, region_start, region_end)
 
